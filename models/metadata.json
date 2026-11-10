@@ -1,0 +1,86 @@
+{
+  "model_name": "hist_gradient_boosting",
+  "trained_at": "2026-11-10T09:38:03.319599+00:00",
+  "seed": 42,
+  "features": [
+    "attendance_pct",
+    "attendance_trend_3w",
+    "assignment_completion_rate",
+    "late_submission_rate",
+    "prev_score_1",
+    "prev_score_2",
+    "prev_score_3",
+    "days_since_last_submission"
+  ],
+  "threshold": 0.4671308638752085,
+  "band_cutoffs": {
+    "low_max": 0.3,
+    "medium_max": 0.4671308638752085
+  },
+  "training_medians": {
+    "attendance_pct": 79.990775839,
+    "attendance_trend_3w": -0.2123742764,
+    "assignment_completion_rate": 0.53969992045,
+    "late_submission_rate": 0.280457861,
+    "prev_score_1": 61.905329347,
+    "prev_score_2": 62.91175935995,
+    "prev_score_3": 63.1553345047,
+    "days_since_last_submission": 6.0
+  },
+  "valid_ranges": {
+    "attendance_pct": {
+      "min": 0,
+      "max": 100
+    },
+    "attendance_trend_3w": {
+      "min": -100,
+      "max": 100
+    },
+    "assignment_completion_rate": {
+      "min": 0,
+      "max": 1
+    },
+    "late_submission_rate": {
+      "min": 0,
+      "max": 1
+    },
+    "prev_score_1": {
+      "min": 0,
+      "max": 100
+    },
+    "prev_score_2": {
+      "min": 0,
+      "max": 100
+    },
+    "prev_score_3": {
+      "min": 0,
+      "max": 100
+    },
+    "days_since_last_submission": {
+      "min": 0,
+      "max": null
+    }
+  },
+  "test_metrics": {
+    "precision": 0.5519125683060109,
+    "recall": 0.7709923664122137,
+    "f1": 0.643312101910828,
+    "roc_auc": 0.9002750695812107,
+    "pr_auc": 0.7334037815557954,
+    "confusion_matrix": [
+      387,
+      82,
+      30,
+      101
+    ],
+    "threshold": 0.4671308638752085
+  },
+  "split_description": {
+    "train": "terms 1 and 2",
+    "validation": "term 3",
+    "test": "term 4",
+    "final_refit": "training terms 1 and 2 only; validation not merged"
+  },
+  "sklearn_version": "1.9.1",
+  "band_cutoff_note": "Low < 0.30; Medium 0.30 to threshold; High >= threshold."
+}
