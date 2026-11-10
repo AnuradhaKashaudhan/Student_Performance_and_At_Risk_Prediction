@@ -133,18 +133,20 @@ The fitted artifact returned this response for that input (probability rounded t
 
 ```json
 {
-  "risk_probability": 0.847,
+  "risk_probability": 0.664,
   "risk_band": "High",
   "flagged": true,
+  "uncertainty": "normal",
+  "confidence_note": "The estimate is not a certainty; it is outside the borderline range and uses the available feature values.",
   "top_signals": [
-    {"feature": "prev_score_3", "value": 41.0, "effect": "increases risk", "impact": 0.256, "message": "Previous score 3 of 41.0 points is below the typical level and increases risk."},
-    {"feature": "assignment_completion_rate", "value": 0.3, "effect": "increases risk", "impact": 0.047, "message": "Assignment completion of 30% is below the typical level and increases risk."},
-    {"feature": "attendance_pct", "value": 55.0, "effect": "reduces risk", "impact": 0.046, "message": "Attendance of 55% is below the typical level and reduces risk."}
+    {"feature": "prev_score_3", "value": 41.0, "effect": "increases risk", "impact": 0.333, "message": "Previous score 3 of 41.0 points is below the typical level and increases risk."},
+    {"feature": "attendance_pct", "value": 55.0, "effect": "reduces risk", "impact": 0.087, "message": "Attendance of 55% is below the typical level and reduces risk."},
+    {"feature": "assignment_completion_rate", "value": 0.3, "effect": "increases risk", "impact": 0.078, "message": "Assignment completion of 30% is below the typical level and increases risk."}
   ],
   "warnings": [],
   "human_review_note": "Advisory only. This is a statistical estimate, not a judgement about the student. A teacher or counsellor must review before any action. Never use for grading, punishment or admission decisions.",
   "model_name": "hist_gradient_boosting",
-  "threshold": 0.4671308638752085
+  "threshold": 0.22860668933306647
 }
 ```
 
@@ -152,13 +154,15 @@ The fitted artifact returned this response for that input (probability rounded t
 
 Final held-out test results, read from `reports/model_comparison_test.csv` and `reports/test_metrics.json`:
 
-| Model | Threshold | Precision | Recall | F1 | ROC-AUC | PR-AUC | TN | FP | FN | TP |
+| Model | Threshold | Precision | Recall | F1 | ROC-AUC | PR-AUC | Brier | TN | FP | FN | TP |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Histogram gradient boosting (selected) | 0.467 | 0.552 | 0.771 | 0.643 | 0.900 | 0.733 | 387 | 82 | 30 | 101 |
-| Rule: `prev_score_3 < 50` | 0.500 | 0.637 | 0.443 | 0.523 | 0.686 | 0.404 | 436 | 33 | 73 | 58 |
-| Stratified dummy | 0.500 | 0.187 | 0.198 | 0.193 | 0.479 | 0.212 | 356 | 113 | 105 | 26 |
+| Histogram gradient boosting, sigmoid calibrated | 0.229 | 0.552 | 0.771 | 0.643 | 0.900 | 0.733 | 0.100 | 387 | 82 | 30 | 101 |
+| Rule: `prev_score_3 < 50` | 0.500 | 0.637 | 0.443 | 0.523 | 0.686 | 0.404 | 0.177 | 436 | 33 | 73 | 58 |
+| Stratified dummy | 0.500 | 0.187 | 0.198 | 0.193 | 0.479 | 0.212 | 0.363 | 356 | 113 | 105 | 26 |
 
-The final test report compares the selected model with both baselines. Logistic regression and random forest are reported in `reports/model_comparison_val.csv`; they were not separately evaluated on the held-out test set because the test is reserved for the selected model and baselines.
+The selected model's sigmoid calibrator is fitted with five-fold cross-validation on training terms only. On validation, Brier score improved from **0.122** uncalibrated to **0.099** calibrated (`reports/calibration_comparison_val.csv` and `reports/figures/calibration_curve.png`). The threshold was re-selected on calibrated validation probabilities. The final test report compares the calibrated selected model with both baselines. Logistic regression and random forest are reported in `reports/model_comparison_val.csv`; they were not separately evaluated on the held-out test set because the test is reserved for the selected model and baselines.
+
+The API also returns an uncertainty level and confidence note. Uncertainty is `high` when the probability is within 0.07 of the decision threshold or at least two inputs are missing; otherwise it is `normal`. This is a simple review cue, not a statistical confidence interval or guarantee.
 
 ## Responsible AI
 

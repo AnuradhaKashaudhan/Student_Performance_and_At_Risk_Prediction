@@ -1,6 +1,11 @@
 {
   "model_name": "hist_gradient_boosting",
-  "trained_at": "2026-11-10T09:38:03.319599+00:00",
+  "calibration": {
+    "method": "sigmoid",
+    "cv": 5,
+    "fitted_on": "training terms 1 and 2 only"
+  },
+  "trained_at": "2026-11-10T16:03:06.298206+00:00",
   "seed": 42,
   "features": [
     "attendance_pct",
@@ -12,11 +17,12 @@
     "prev_score_3",
     "days_since_last_submission"
   ],
-  "threshold": 0.4671308638752085,
+  "threshold": 0.22860668933306647,
   "band_cutoffs": {
-    "low_max": 0.3,
-    "medium_max": 0.4671308638752085
+    "low_max": 0.11430334466653323,
+    "medium_max": 0.22860668933306647
   },
+  "band_cutoff_note": "The selected threshold is below 0.30, so low_max is set to half the threshold; this preserves ordered Low, Medium, and High bands.",
   "training_medians": {
     "attendance_pct": 79.990775839,
     "attendance_trend_3w": -0.2123742764,
@@ -67,13 +73,14 @@
     "f1": 0.643312101910828,
     "roc_auc": 0.9002750695812107,
     "pr_auc": 0.7334037815557954,
+    "brier_score": 0.1000722784931059,
     "confusion_matrix": [
       387,
       82,
       30,
       101
     ],
-    "threshold": 0.4671308638752085
+    "threshold": 0.22860668933306647
   },
   "split_description": {
     "train": "terms 1 and 2",
@@ -81,6 +88,5 @@
     "test": "term 4",
     "final_refit": "training terms 1 and 2 only; validation not merged"
   },
-  "sklearn_version": "1.9.1",
-  "band_cutoff_note": "Low < 0.30; Medium 0.30 to threshold; High >= threshold."
+  "sklearn_version": "1.9.1"
 }

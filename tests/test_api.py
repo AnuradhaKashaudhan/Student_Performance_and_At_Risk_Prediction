@@ -43,6 +43,8 @@ def test_health_and_prediction_schema() -> None:
     assert result["risk_band"] in {"Low", "Medium", "High"}
     assert len(result["top_signals"]) == 3
     assert result["human_review_note"]
+    assert result["uncertainty"] in {"normal", "high"}
+    assert result["confidence_note"]
     # Local explanations need counterfactual predictions, so independently
     # reproduce only the primary model probability from the persisted pipeline.
     import pandas as pd
@@ -59,6 +61,8 @@ def test_missing_feature_is_reported_as_warning() -> None:
 
     assert response.status_code == 200
     assert any("prev_score_3 missing" in warning for warning in response.json()["warnings"])
+    assert response.json()["uncertainty"] in {"normal", "high"}
+    assert response.json()["confidence_note"]
 
 
 def test_different_students_get_model_derived_probabilities() -> None:

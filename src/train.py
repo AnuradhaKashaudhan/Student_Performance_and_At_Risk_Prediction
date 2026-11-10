@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import sklearn
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -23,6 +24,7 @@ from sklearn.utils.class_weight import compute_sample_weight
 
 from src.evaluate import (
     evaluate,
+    plot_calibration_curve,
     plot_confusion_matrix,
     plot_model_comparison,
     plot_pr_curve,
@@ -177,6 +179,7 @@ def _comparison_row(
         "f1": metrics["f1"],
         "roc_auc": metrics["roc_auc"],
         "pr_auc": metrics["pr_auc"],
+        "brier_score": metrics["brier_score"],
         "tn": metrics["confusion_matrix"][0],
         "fp": metrics["confusion_matrix"][1],
         "fn": metrics["confusion_matrix"][2],
@@ -350,9 +353,6 @@ def train() -> None:
     print("\nTuned candidate validation metrics at threshold 0.5:")
     print(tuned_comparison.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
     final_name = str(tuned_comparison.sort_values("pr_auc", ascending=False).iloc[0]["model_name"])
-    final_threshold = select_threshold(
-        y_val, _positive_probability(tuned_models[final_name], X_val), min_recall=0.80
-    )
 
     # Refit the selected full pipeline on training terms only, not validation.
     final_model = clone(tuned_models[final_name])
@@ -363,9 +363,64 @@ def train() -> None:
         )
     final_model.fit(X_train, y_train, **final_fit_params)
 
+    # Fit the probability mapping through five-fold CV on training rows only.
+    # ensemble=False then refits the base pipeline on all training rows.
+    calibrated_model = CalibratedClassifierCV(
+        estimator=clone(final_model),
+        method="sigmoid",
+        cv=5,
+        ensemble=False,
+    )
+    calibrated_model.fit(X_train, y_train)
+
+    uncalibrated_val_probabilities = _positive_probability(final_model, X_val)
+    calibrated_val_probabilities = _positive_probability(calibrated_model, X_val)
+    calibration_comparison = pd.DataFrame(
+        [
+            {
+                "model_name": f"{final_name}_uncalibrated",
+                "brier_score": evaluate(
+                    y_val, uncalibrated_val_probabilities, threshold=0.5
+                )["brier_score"],
+                "roc_auc": evaluate(
+                    y_val, uncalibrated_val_probabilities, threshold=0.5
+                )["roc_auc"],
+            },
+            {
+                "model_name": f"{final_name}_sigmoid_calibrated",
+                "brier_score": evaluate(
+                    y_val, calibrated_val_probabilities, threshold=0.5
+                )["brier_score"],
+                "roc_auc": evaluate(
+                    y_val, calibrated_val_probabilities, threshold=0.5
+                )["roc_auc"],
+            },
+        ]
+    )
+    calibration_comparison.to_csv(
+        reports / "calibration_comparison_val.csv", index=False
+    )
+    plot_calibration_curve(
+        y_val,
+        uncalibrated_val_probabilities,
+        calibrated_val_probabilities,
+        final_name,
+    )
+    print("\nValidation probability calibration comparison (lower Brier is better):")
+    print(calibration_comparison.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+
+    # Calibrated probabilities change the operating point, so select a fresh
+    # threshold from validation predictions after calibration.
+    final_threshold = select_threshold(
+        y_val, calibrated_val_probabilities, min_recall=0.80
+    )
+    calibrated_validation_metrics = evaluate(
+        y_val, calibrated_val_probabilities, final_threshold
+    )
+
     # Evaluate each selected test candidate exactly once, after all choices are fixed.
     test_probabilities: dict[str, np.ndarray] = {
-        final_name: _positive_probability(final_model, X_test)
+        final_name: _positive_probability(calibrated_model, X_test)
     }
     thresholds = {final_name: final_threshold}
     for baseline_name in ("dummy_stratified", "rule_prev_score_3_lt_50"):
@@ -408,6 +463,11 @@ def train() -> None:
     }
     metadata = {
         "model_name": final_name,
+        "calibration": {
+            "method": "sigmoid",
+            "cv": 5,
+            "fitted_on": "training terms 1 and 2 only",
+        },
         "trained_at": datetime.now(timezone.utc).isoformat(),
         "seed": SEED,
         "features": FEATURES,
@@ -429,7 +489,7 @@ def train() -> None:
     }
     model_dir = ROOT / "models"
     model_dir.mkdir(parents=True, exist_ok=True)
-    joblib.dump(final_model, model_dir / "model.joblib")
+    joblib.dump(calibrated_model, model_dir / "model.joblib")
     with (model_dir / "metadata.json").open("w", encoding="utf-8") as file:
         json.dump(metadata, file, indent=2)
 
@@ -437,7 +497,7 @@ def train() -> None:
     print(test_comparison.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
     print(
         f"\nSelected model: {final_name}; validation threshold={final_threshold:.3f}; "
-        f"validation recall={evaluate(y_val, _positive_probability(tuned_models[final_name], X_val), final_threshold)['recall']:.3f}"
+        f"validation recall={calibrated_validation_metrics['recall']:.3f}"
     )
     print("Saved models/model.joblib and models/metadata.json")
     print("Saved reports/test_metrics.json, comparison CSVs, error analyses, and figures.")

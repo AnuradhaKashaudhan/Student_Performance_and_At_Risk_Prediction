@@ -67,6 +67,40 @@ def test_explanation_warns_and_clips_outliers_and_missing_values() -> None:
     assert any("prev_score_3 missing" in warning for warning in result["warnings"])
 
 
+def test_uncertainty_is_high_for_multiple_missing_features() -> None:
+    pipeline, metadata = load_artifact(
+        ROOT / "models" / "model.joblib",
+        ROOT / "models" / "metadata.json",
+    )
+    record = dict(HIGH_RISK_STUDENT, prev_score_3=None, attendance_pct=None)
+
+    result = predict_one(pipeline, metadata, record)
+
+    assert result["uncertainty"] == "high"
+    assert "two input features are missing" in result["confidence_note"]
+
+
+def test_borderline_prediction_is_marked_high_uncertainty() -> None:
+    pipeline, metadata = load_artifact(
+        ROOT / "models" / "model.joblib",
+        ROOT / "models" / "metadata.json",
+    )
+    threshold = metadata["threshold"]
+    record = dict(HIGH_RISK_STUDENT)
+    record["assignment_completion_rate"] = None
+
+    for score in range(0, 101):
+        candidate = dict(record, prev_score_3=score)
+        result = predict_one(pipeline, metadata, candidate)
+        if abs(result["risk_probability"] - threshold) <= 0.07:
+            break
+    else:
+        pytest.skip("This model did not produce a test-record probability near threshold.")
+
+    assert result["uncertainty"] == "high"
+    assert "decision threshold" in result["confidence_note"]
+
+
 def test_api_serves_model_and_predictions(client: TestClient) -> None:
     assert client.get("/health").json()["model_loaded"] is True
     assert client.get("/model-info").status_code == 200
@@ -77,6 +111,8 @@ def test_api_serves_model_and_predictions(client: TestClient) -> None:
     assert high.status_code == low.status_code == 200
     assert high.json()["risk_probability"] > low.json()["risk_probability"]
     assert "human_review_note" in high.json()
+    assert high.json()["uncertainty"] in {"normal", "high"}
+    assert high.json()["confidence_note"]
 
 
 def test_api_accepts_outliers_and_missing_features(client: TestClient) -> None:

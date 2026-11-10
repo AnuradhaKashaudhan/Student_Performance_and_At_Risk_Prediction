@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import (
     average_precision_score,
+    brier_score_loss,
     confusion_matrix,
     f1_score,
     precision_recall_curve,
@@ -36,6 +37,7 @@ def evaluate(y_true: object, y_proba: object, threshold: float) -> dict[str, obj
         "f1": float(f1_score(truth, predictions, zero_division=0)),
         "roc_auc": float(roc_auc_score(truth, probabilities)),
         "pr_auc": float(average_precision_score(truth, probabilities)),
+        "brier_score": float(brier_score_loss(truth, probabilities)),
         "confusion_matrix": (int(tn), int(fp), int(fn), int(tp)),
         "threshold": float(threshold),
     }
@@ -137,6 +139,44 @@ def plot_roc_curve(y_true: object, y_proba: object, model_name: str) -> Path:
     ax.legend()
     ax.grid(alpha=0.25)
     return _save_figure(fig, "roc_curve_test.png")
+
+
+def plot_calibration_curve(
+    y_true: object,
+    uncalibrated_proba: object,
+    calibrated_proba: object,
+    model_name: str,
+) -> Path:
+    """Compare validation reliability curves before and after sigmoid calibration."""
+    from sklearn.calibration import calibration_curve
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    for probabilities, label, color in (
+        (uncalibrated_proba, "Uncalibrated", "#E45756"),
+        (calibrated_proba, "Sigmoid calibrated", "#4C78A8"),
+    ):
+        observed, predicted = calibration_curve(
+            y_true, probabilities, n_bins=10, strategy="quantile"
+        )
+        brier = brier_score_loss(y_true, probabilities)
+        ax.plot(
+            predicted,
+            observed,
+            marker="o",
+            label=f"{label} (Brier={brier:.3f})",
+            color=color,
+        )
+    ax.plot([0, 1], [0, 1], linestyle="--", color="gray", label="Perfect calibration")
+    ax.set(
+        title=f"{model_name}: validation reliability curve",
+        xlabel="Mean predicted probability",
+        ylabel="Observed fraction of at-risk students",
+        xlim=(0, 1),
+        ylim=(0, 1),
+    )
+    ax.legend(loc="best")
+    ax.grid(alpha=0.25)
+    return _save_figure(fig, "calibration_curve.png")
 
 
 def plot_model_comparison(comparison: pd.DataFrame, filename: str) -> Path:

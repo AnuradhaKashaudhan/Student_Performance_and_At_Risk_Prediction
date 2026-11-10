@@ -202,8 +202,35 @@ def predict_one(
             warnings.append(
                 f"{feature}={number:g} is outside {lower_text}-{upper_text}: {action}"
             )
-    if abs(probability - threshold) <= 0.07:
+    borderline = abs(probability - threshold) <= 0.07
+    missing_count = sum(_is_missing(value) for value in raw_record.values())
+    uncertainty = "high" if borderline or missing_count >= 2 else "normal"
+    if borderline:
         warnings.append("borderline case: higher uncertainty")
+    if missing_count >= 2:
+        warnings.append(
+            f"{missing_count} features are missing: prediction uncertainty is higher"
+        )
+    if borderline and missing_count >= 2:
+        confidence_note = (
+            "Confidence is lower because this estimate is near the decision threshold "
+            "and at least two input features are missing."
+        )
+    elif borderline:
+        confidence_note = (
+            "Confidence is lower because this estimate is close to the decision "
+            "threshold; a human should review it carefully."
+        )
+    elif missing_count >= 2:
+        confidence_note = (
+            "Confidence is lower because at least two input features are missing "
+            "and were median-imputed."
+        )
+    else:
+        confidence_note = (
+            "The estimate is not a certainty; it is outside the borderline range "
+            "and uses the available feature values."
+        )
 
     medians = meta["training_medians"]
     signals: list[tuple[float, dict[str, Any]]] = []
@@ -230,6 +257,8 @@ def predict_one(
         "risk_probability": round(probability, 3),
         "risk_band": risk_band,
         "flagged": probability >= threshold,
+        "uncertainty": uncertainty,
+        "confidence_note": confidence_note,
         "top_signals": [signal for _, signal in signals[:3]],
         "warnings": warnings,
         "human_review_note": HUMAN_REVIEW_NOTE,

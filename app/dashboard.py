@@ -79,6 +79,15 @@ with tabs[0]:
         )
         middle.metric("Estimated risk probability", f"{result['risk_probability']:.1%}")
         right.metric("At/above review threshold", "Yes" if result["flagged"] else "No")
+        if result["uncertainty"] == "high":
+            st.warning(
+                f"Uncertainty: high. {result['confidence_note']}",
+                icon="⚠️",
+            )
+        else:
+            st.caption(
+                f"Uncertainty: normal. {result['confidence_note']}"
+            )
 
         st.markdown("#### Main signals")
         signals = result.get("top_signals", [])

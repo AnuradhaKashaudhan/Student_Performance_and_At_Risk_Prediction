@@ -2,7 +2,7 @@
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request
@@ -110,6 +110,37 @@ class BatchPredictionRequest(BaseModel):
     ]
 
 
+class RiskSignal(BaseModel):
+    """One local feature perturbation that influenced a prediction."""
+
+    feature: str
+    value: float | None
+    effect: Literal["increases risk", "reduces risk"]
+    impact: float
+    message: str
+
+
+class PredictionResponse(BaseModel):
+    """Schema for a calibrated risk estimate and its uncertainty notice."""
+
+    risk_probability: Annotated[float, Field(ge=0, le=1)]
+    risk_band: Literal["Low", "Medium", "High"]
+    flagged: bool
+    uncertainty: Literal["normal", "high"]
+    confidence_note: str
+    top_signals: Annotated[list[RiskSignal], Field(max_length=3)]
+    warnings: list[str]
+    human_review_note: str
+    model_name: str
+    threshold: Annotated[float, Field(ge=0, le=1)]
+
+
+class BatchPredictionResponse(BaseModel):
+    """Schema for a batch of artifact-backed predictions."""
+
+    predictions: list[PredictionResponse]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load model and metadata once when the service starts."""
@@ -187,7 +218,11 @@ def model_info(request: Request) -> dict[str, Any]:
     }
 
 
-@app.post("/predict", summary="Estimate risk for one student")
+@app.post(
+    "/predict",
+    response_model=PredictionResponse,
+    summary="Estimate risk for one student",
+)
 def predict(student: StudentFeatures, request: Request) -> dict[str, Any]:
     """Return an estimated risk, local feature signals, and review warnings."""
     pipeline, metadata = _require_artifact(request)
@@ -197,7 +232,11 @@ def predict(student: StudentFeatures, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@app.post("/predict-batch", summary="Estimate risk for up to 100 students")
+@app.post(
+    "/predict-batch",
+    response_model=BatchPredictionResponse,
+    summary="Estimate risk for up to 100 students",
+)
 def predict_batch(
     batch: BatchPredictionRequest, request: Request
 ) -> dict[str, list[dict[str, Any]]]:
