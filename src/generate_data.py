@@ -1,8 +1,9 @@
-"""Generate a reproducible, synthetic student checkpoint dataset.
+"""Generate reproducible synthetic checkpoint and audit-group data.
 
-The dataset is designed for an educational-support decision, not to represent
-real students or to make decisions about them. Its explicit feature list avoids
-protected characteristics and obvious demographic proxies.
+The feature table is designed for an educational-support decision, not to
+represent real students or to make decisions about them. Protected group labels
+are kept in a separate audit file, though observable education measures may
+still act as proxies for unobserved circumstances.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ FEATURE_COLUMNS = [
     "prev_score_3",
     "days_since_last_submission",
 ]
+AUDIT_GROUP_COLUMNS = ["gender", "school_support_level"]
 OUTPUT_COLUMNS = [
     "student_id",
     "term",
@@ -53,12 +55,14 @@ def _calibrate_intercept(base_score: np.ndarray, target_rate: float = 0.215) -> 
     return 50 - cutoff
 
 
-def generate(n_per_term: int = 600, n_terms: int = 4, seed: int = 42) -> pd.DataFrame:
-    """Return a seeded synthetic dataset with one record per student.
+def generate_datasets(
+    n_per_term: int = 600, n_terms: int = 4, seed: int = 42
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return student records and a separate, synthetic audit-group table.
 
     Ability and engagement are standard-normal latent traits with correlation
     0.4. They are used only to construct observable educational indicators and
-    assessment scores, and are deliberately never included in the output.
+    assessment scores, and are deliberately never included in either output.
     Attendance is based on eight noisy weekly measurements, making the
     three-week trend a genuine late-versus-earlier change rather than a random
     column. Assignment completion and late submission rates use bounded logistic
@@ -78,6 +82,12 @@ def generate(n_per_term: int = 600, n_terms: int = 4, seed: int = 42) -> pd.Data
     another same-term feature/label profile but retain a fresh ID. This allows
     duplicate-profile checks while preserving the explicit unique-ID and fixed
     row-count requirements.
+
+    Audit groups are generated separately from the student feature table.
+    Their assignments are random but mildly associated with latent engagement
+    to make group-level metric calculations demonstrable; this artificial
+    relationship is not a claim about real gender or support needs. Group labels
+    are not model inputs and are written only to ``audit_groups.csv``.
     """
     if n_per_term < 2:
         raise ValueError("n_per_term must be at least 2 to inject duplicate profiles.")
@@ -86,7 +96,6 @@ def generate(n_per_term: int = 600, n_terms: int = 4, seed: int = 42) -> pd.Data
 
     rng = np.random.default_rng(seed)
     records: list[dict[str, int | float | str]] = []
-    latent_ability: list[np.ndarray] = []
     latent_engagement: list[np.ndarray] = []
 
     for term in range(1, n_terms + 1):
@@ -94,7 +103,6 @@ def generate(n_per_term: int = 600, n_terms: int = 4, seed: int = 42) -> pd.Data
         engagement = 0.4 * ability + np.sqrt(1 - 0.4**2) * rng.normal(
             0, 1, n_per_term
         )
-        latent_ability.append(ability)
         latent_engagement.append(engagement)
 
         # A per-student slope plus weekly noise makes attendance trends variable.
@@ -207,7 +215,46 @@ def generate(n_per_term: int = 600, n_terms: int = 4, seed: int = 42) -> pd.Data
     assert 0.18 <= at_risk_rate <= 0.25, (
         f"At-risk rate {at_risk_rate:.3f} is outside 18%-25%."
     )
-    return frame
+
+    engagement_all = np.concatenate(latent_engagement)
+    engagement_tendency = np.tanh(engagement_all)
+    other_probability = np.full(len(frame), 0.08)
+    female_probability = 0.46 + 0.08 * engagement_tendency
+    gender_probabilities = np.column_stack(
+        (1 - other_probability - female_probability, female_probability, other_probability)
+    )
+    gender = np.array(
+        [rng.choice(["M", "F", "Other"], p=probabilities)
+         for probabilities in gender_probabilities]
+    )
+
+    low_probability = 0.33 - 0.08 * engagement_tendency
+    high_probability = 0.33 + 0.08 * engagement_tendency
+    support_probabilities = np.column_stack(
+        (low_probability, 1 - low_probability - high_probability, high_probability)
+    )
+    support_level = np.array(
+        [
+            rng.choice(["low", "medium", "high"], p=probabilities)
+            for probabilities in support_probabilities
+        ]
+    )
+    audit_groups = pd.DataFrame(
+        {
+            "student_id": frame["student_id"].to_numpy(),
+            "gender": gender,
+            "school_support_level": support_level,
+        },
+        columns=["student_id", *AUDIT_GROUP_COLUMNS],
+    )
+    assert not set(AUDIT_GROUP_COLUMNS).intersection(frame.columns)
+    return frame, audit_groups
+
+
+def generate(n_per_term: int = 600, n_terms: int = 4, seed: int = 42) -> pd.DataFrame:
+    """Return only model-eligible student records for the given random seed."""
+    student_data, _ = generate_datasets(n_per_term, n_terms, seed)
+    return student_data
 
 
 def main() -> None:
@@ -223,11 +270,17 @@ def main() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    output_path = Path(__file__).resolve().parents[1] / "data" / "raw" / "students.csv"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    dataset = generate(args.n_per_term, args.n_terms, args.seed)
-    dataset.to_csv(output_path, index=False, float_format="%.10f")
-    LOGGER.info("Wrote %s", output_path)
+    raw_dir = Path(__file__).resolve().parents[1] / "data" / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    dataset, audit_groups = generate_datasets(
+        args.n_per_term, args.n_terms, args.seed
+    )
+    data_path = raw_dir / "students.csv"
+    audit_path = raw_dir / "audit_groups.csv"
+    dataset.to_csv(data_path, index=False, float_format="%.10f")
+    audit_groups.to_csv(audit_path, index=False)
+    LOGGER.info("Wrote %s", data_path)
+    LOGGER.info("Wrote separate audit groups to %s", audit_path)
 
 
 if __name__ == "__main__":

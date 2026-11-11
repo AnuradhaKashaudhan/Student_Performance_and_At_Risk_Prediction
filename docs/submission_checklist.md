@@ -8,6 +8,8 @@
 | Run all automated acceptance tests | `pytest -q`; see `tests/test_generate_data.py`, `tests/test_split_no_leakage.py`, `tests/test_preprocess.py`, `tests/test_api.py`, and `tests/test_artifact.py`. |
 | Verify held-out metrics | `reports/test_metrics.json` and `reports/model_comparison_test.csv`; final holdout is term 4 and its confusion matrix is in `reports/figures/confusion_matrix_test.png`. |
 | Verify calibration and uncertainty behavior | `reports/calibration_comparison_val.csv` compares validation Brier scores; `reports/figures/calibration_curve.png` shows reliability curves; `pytest -q tests/test_explain_api.py tests/test_api.py` exercises uncertainty fields and missing-input behavior. |
+| Verify robustness and drift warnings | Run `python -m src.robustness`; inspect `reports/robustness.csv` and `reports/figures/robustness.png`; `pytest -q tests/test_robustness.py tests/test_explain_api.py` checks deterministic test-term perturbations and input-drift warnings. |
+| Verify responsible-AI group audit | Run `python -m src.audit`; inspect `reports/fairness_audit.csv` and `reports/figures/fairness_audit.png`. `pytest -q tests/test_audit.py` verifies the audit uses term-4 predictions and audit fields are not model features. |
 | Verify a real artifact-backed API prediction | Start with `uvicorn api.main:app --reload`, then run the README `curl` request against `/predict`; check `/health` and `/model-info`. |
 | Verify one explained prediction and one error | `/predict` returns `top_signals`, warnings, and the human-review note. Example held-out errors with score/probability are in `reports/false_positives.csv` and `reports/false_negatives.csv`; see the worked examples in `reports/technical_report.md`. |
 | Verify leakage and sensitive-data checks | `pytest -q tests/test_split_no_leakage.py tests/test_preprocess.py`; inspect `src/preprocess.py` (`FEATURES`, `FORBIDDEN`) and `src/split.py`. |
@@ -15,11 +17,11 @@
 ## Four-minute video script
 
 - **0:00 — Problem:** Explain the week-8 checkpoint, the two-week week-10 target, and the teacher/counsellor check-in decision. Say this is advisory only.
-- **0:30 — Data and EDA:** Run `python -m src.generate_data --seed 42`; show the 2,400 synthetic rows, 21.5% at-risk rate, missingness/outlier checks, and EDA plots. Mention there is no real student data.
-- **1:15 — Baselines and model results:** Show `reports/model_comparison_test.csv`, `reports/test_metrics.json`, and `reports/calibration_comparison_val.csv`. Explain why recall was prioritized, the calibrated validation-selected 0.2286 threshold, the validation Brier improvement (0.1224 to 0.0987), and the test confusion matrix.
+- **0:30 — Data and EDA:** Run `python -m src.generate_data --seed 42`; show the 2,400 synthetic rows, 21.5% at-risk rate, missingness/outlier checks, and EDA plots. Point out that `audit_groups.csv` is separate from the model dataset and mention there is no real student data.
+- **1:15 — Baselines and model results:** Show `reports/model_comparison_test.csv`, `reports/test_metrics.json`, and `reports/calibration_comparison_val.csv`. Explain why recall was prioritized, the calibrated validation-selected 0.2422 threshold, the validation Brier improvement (0.128649 to 0.097660), and the test confusion matrix.
 - **2:00 — Live prediction through the dashboard:** Start Uvicorn and Streamlit; use a high-risk example in the form. Show the risk probability, band, and flagged status.
 - **2:45 — Explain one prediction and one error:** Read the top three median-replacement signals. Open a false-positive or false-negative CSV row and explain that the model lacks important context and can be wrong.
-- **3:30 — Limitations and responsible use:** Reiterate synthetic-data limitations, possible proxy effects, human review, privacy, and the prohibition on automated grading, punishment, or admissions. Finish with future validation needs.
+- **3:30 — Limitations and responsible use:** Show the synthetic-group audit and its largest gaps, then explain that its labels and population are artificial and not fairness evidence for real students. Reiterate attendance proxy risks, human review, privacy, and the prohibition on automated grading, punishment, or admissions. Finish with future validation needs.
 
 ## Submission form answers
 
@@ -28,7 +30,7 @@
 - **Final commit ID:** Run `git rev-parse HEAD` after committing the final submission. This workspace may not yet have a submission commit; do not invent a hash.
 - **Demo declaration:** Local-only demo; no public hosting or real student records are used.
 - **Tech stack:** Python, NumPy, pandas, scikit-learn, matplotlib, seaborn, joblib, FastAPI, Uvicorn, Pydantic, Streamlit, requests, pytest, httpx, Jupyter/nbformat.
-- **Known incomplete features:** No authentication/authorization, audit log, production deployment, real-world validation, subgroup fairness assessment, drift monitoring, or live threshold control. See `README.md` and `reports/technical_report.md`.
+- **Known incomplete features:** No authentication/authorization, audit log, production deployment, real-world validation, real-population subgroup fairness assessment, automated ongoing drift monitoring, or live threshold control. The API only warns on individual inputs beyond three training standard deviations. See `README.md` and `reports/technical_report.md`.
 - **AI tools used:** GitHub Copilot was used for code scaffolding; all code was reviewed and understood by me.
 - **Declarations:** Data are entirely synthetic and generated by `src/generate_data.py`; no real student data or external dataset are included. The system is advisory only and does not automate consequential decisions. Confirm any institution-specific originality/AI-use declaration before submission.
 
@@ -37,10 +39,10 @@
 1. **Why prioritize recall?** A false negative could miss an opportunity to offer timely academic support. The trade-off is more unnecessary check-ins, so precision and the confusion matrix are reported too.
 2. **Why split chronologically by term?** It resembles predicting for a later cohort and avoids mixing the same term's conditions across train and test.
 3. **How did you avoid leakage?** Only the eight week-8 features enter the pipeline. IDs, term, target, and next score are forbidden; whole terms are kept separate; tuning uses training folds only.
-4. **Why choose histogram gradient boosting?** After tuning, it had the highest validation PR-AUC (0.733) among the two tuned candidates, compared with 0.727 for logistic regression. The held-out term-4 PR-AUC was 0.733.
-5. **How can the threshold be changed?** For an experiment, select a new threshold on calibrated validation probabilities to meet the intended recall/precision trade-off, update `models/metadata.json` consistently with `band_cutoffs`, then restart the API. Do not tune against the test set. A user-facing live threshold control is not implemented.
+4. **Why choose logistic regression?** In the current reproducible run, its tuned validation PR-AUC (0.727) was higher than the random-forest candidate (0.717). The final calibrated pipeline is selected without using the held-out term-4 test scores.
+5. **How can the threshold be changed?** For an experiment, select a new threshold on calibrated validation probabilities to meet the intended recall/precision trade-off, then regenerate the model and metadata with `python -m src.train` so `band_cutoffs` match. Do not tune against the test set. A user-facing live threshold control is not implemented.
 6. **How would you add a feature?** First establish it is available by week 8 and appropriate to use; then update `FEATURES`, preprocessing and validation, data schema/generator, training inputs, API model, dashboard, tests, and retrain the artifact. Re-run leakage checks.
-7. **What happens when a value is missing?** The pipeline clips valid outliers, median-imputes missing raw/derived values using training medians, and adds missingness indicators. The API returns a warning for each missing value and marks uncertainty high if at least two inputs are missing or the probability is within 0.07 of the threshold.
+7. **What happens when a value is missing or unusual?** The pipeline clips valid outliers, median-imputes missing raw/derived values using training medians, and adds missingness indicators. The API returns missing-value and greater-than-three-standard-deviation input warnings, and marks uncertainty high if at least two inputs are missing or the probability is within 0.07 of the threshold.
 8. **What does a false positive mean at school?** The model flagged a student whose week-10 score was at least 50. It may prompt an unnecessary check-in, not a punitive label; a respectful check-in can still be useful.
 9. **What does a false negative mean?** The student scored below 50 but was not flagged. It can reflect noise, a sudden event, or information absent from the features; this is why the estimate must not replace teacher awareness.
 10. **Can these results be used for real students?** No. The labels and population are synthetic, so the metrics do not establish real-world validity or fairness. Prospective, governed validation and human oversight would be required first.

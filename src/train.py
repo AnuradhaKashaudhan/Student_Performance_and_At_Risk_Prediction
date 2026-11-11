@@ -243,19 +243,17 @@ def _write_error_analysis(
 
 
 def _band_cutoffs(threshold: float) -> tuple[dict[str, float], str]:
-    """Build ordered low/medium/high probability cutoffs."""
-    if threshold >= 0.30:
+    """Build low/medium/high probability cutoffs around the decision threshold."""
+    if threshold >= 0.50:
+        high_min = min(threshold + 0.15, 0.95)
         return (
-            {"low_max": 0.30, "medium_max": threshold},
-            "Low < 0.30; Medium 0.30 to threshold; High >= threshold.",
+            {"low_max": threshold, "high_min": high_min},
+            "Low < threshold; Medium threshold to high cutoff; High >= high "
+            "cutoff, where high cutoff is min(threshold + 0.15, 0.95).",
         )
-    # Keep three ordered, non-overlapping bands when the selected high cutoff
-    # falls below the usual 0.30 low-risk boundary.
-    low_max = threshold / 2
     return (
-        {"low_max": low_max, "medium_max": threshold},
-        "The selected threshold is below 0.30, so low_max is set to half "
-        "the threshold; this preserves ordered Low, Medium, and High bands.",
+        {"low_max": threshold, "high_min": 0.50},
+        "Low < threshold; Medium threshold to 0.50; High >= 0.50.",
     )
 
 
@@ -450,6 +448,8 @@ def train() -> None:
 
     cleaned_train = Cleaner().fit_transform(X_train)
     medians = cleaned_train.median().to_dict()
+    training_means = cleaned_train.mean().to_dict()
+    training_stds = cleaned_train.std(ddof=0).replace(0, np.nan).fillna(1.0).to_dict()
     low_max, band_note = _band_cutoffs(final_threshold)
     valid_ranges = {
         "attendance_pct": {"min": 0, "max": 100},
@@ -477,6 +477,10 @@ def train() -> None:
         },
         "band_cutoff_note": band_note,
         "training_medians": {key: float(value) for key, value in medians.items()},
+        "training_means": {
+            key: float(value) for key, value in training_means.items()
+        },
+        "training_stds": {key: float(value) for key, value in training_stds.items()},
         "valid_ranges": valid_ranges,
         "test_metrics": test_metrics[final_name],
         "split_description": {

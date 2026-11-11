@@ -66,6 +66,8 @@ def load_artifact(
         "threshold",
         "band_cutoffs",
         "training_medians",
+        "training_means",
+        "training_stds",
         "valid_ranges",
         "test_metrics",
     }
@@ -106,6 +108,17 @@ def _display_value(feature: str, value: Any) -> str:
     if feature == "days_since_last_submission":
         return f"{number:g} days"
     return f"{number:.1f}"
+
+
+def _risk_band(probability: float, band_cutoffs: dict[str, Any]) -> str:
+    """Classify a probability using the persisted low and high band cutoffs."""
+    low_max = float(band_cutoffs["low_max"])
+    high_min = float(band_cutoffs["high_min"])
+    if probability < low_max:
+        return "Low"
+    if probability < high_min:
+        return "Medium"
+    return "High"
 
 
 def _signal_message(
@@ -168,15 +181,7 @@ def predict_one(
     probabilities = pipeline.predict_proba(inference_frame)[:, classes.index(1)]
     probability = float(probabilities[0])
     threshold = float(meta["threshold"])
-    band_cutoffs = meta["band_cutoffs"]
-    low_max = float(band_cutoffs["low_max"])
-    medium_max = float(band_cutoffs["medium_max"])
-    if probability < low_max:
-        risk_band = "Low"
-    elif probability < medium_max:
-        risk_band = "Medium"
-    else:
-        risk_band = "High"
+    risk_band = _risk_band(probability, meta["band_cutoffs"])
 
     warnings: list[str] = []
     preprocessor = getattr(pipeline, "named_steps", {}).get("preprocessor")
@@ -201,6 +206,15 @@ def predict_one(
             )
             warnings.append(
                 f"{feature}={number:g} is outside {lower_text}-{upper_text}: {action}"
+            )
+        training_mean = float(meta["training_means"][feature])
+        training_std = float(meta["training_stds"][feature])
+        if training_std <= 0 or not np.isfinite(training_std):
+            raise ValueError(f"Invalid training standard deviation for {feature}.")
+        if abs(number - training_mean) > 3 * training_std:
+            warnings.append(
+                f"{feature}={number:g} is more than 3 training standard deviations "
+                "from the training mean: possible input drift"
             )
     borderline = abs(probability - threshold) <= 0.07
     missing_count = sum(_is_missing(value) for value in raw_record.values())

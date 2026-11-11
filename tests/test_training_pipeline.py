@@ -7,7 +7,7 @@ import pytest
 from src.evaluate import evaluate, select_threshold
 from src.preprocess import FEATURES, Cleaner, assert_no_forbidden, build_preprocessor
 from src.split import chronological_split, load_data
-from src.train import RuleBaseline
+from src.train import RuleBaseline, _band_cutoffs
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -68,3 +68,16 @@ def test_rule_baseline_and_highest_precision_threshold() -> None:
 
     assert threshold == 0.9
     assert metrics["confusion_matrix"] == (1, 1, 1, 1)
+
+
+def test_band_cutoffs_use_decision_threshold_and_adjust_high_cutoff() -> None:
+    below_half, below_half_note = _band_cutoffs(0.242)
+    at_half, at_half_note = _band_cutoffs(0.5)
+    near_cap, near_cap_note = _band_cutoffs(0.9)
+
+    assert below_half == {"low_max": 0.242, "high_min": 0.5}
+    assert "Medium threshold to 0.50" in below_half_note
+    assert at_half == {"low_max": 0.5, "high_min": 0.65}
+    assert "threshold + 0.15" in at_half_note
+    assert near_cap == {"low_max": 0.9, "high_min": 0.95}
+    assert "0.95" in near_cap_note

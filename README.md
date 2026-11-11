@@ -13,7 +13,7 @@ This project is a small, reproducible advisory decision-support prototype. At th
 | Target | `at_risk = 1` when the next assessment score is **below 50/100**; otherwise `0` |
 | Horizon | Two weeks ahead: the week-10 assessment |
 | Prediction time | End of week 8; predictors must be available by then |
-| Excluded features | Gender, religion, caste, income, disability, location, and proxies; these columns do not exist in the dataset |
+| Excluded features | Gender, religion, caste, income, disability, location, school-support group, and proxies are never model features; only synthetic gender and support-level labels are kept in a separate post-test audit file |
 | Metrics | At-risk recall first, then precision, F1, ROC-AUC, PR-AUC, and confusion matrix |
 | Safety rule | Advisory only. Never automate grading, punishment, or admission decisions. A teacher/counsellor reviews before any action. |
 
@@ -25,9 +25,13 @@ student-risk/
   requirements.txt
   .env.example
   data/raw/students.csv
+  data/raw/audit_groups.csv       # separate synthetic groups, evaluation only
   data/processed/
   src/
     generate_data.py
+    audit.py
+    capacity_analysis.py
+    robustness.py
     split.py
     preprocess.py
     train.py
@@ -35,7 +39,9 @@ student-risk/
     explain.py
     make_global_importance.py
   api/main.py
-  app/dashboard.py
+  app/
+    dashboard.py
+    dashboard_utils.py
   models/model.joblib
   models/metadata.json
   notebooks/01_eda.ipynb
@@ -43,11 +49,18 @@ student-risk/
     model_comparison_val.csv
     model_comparison_test.csv
     test_metrics.json
+    fairness_audit.csv
+    capacity_analysis.csv
+    robustness.csv
     false_positives.csv
     false_negatives.csv
     global_importance.csv
     technical_report.md
     figures/
+      fairness_audit.png
+      capacity_metrics.png
+      cost_vs_threshold.png
+      robustness.png
   docs/submission_checklist.md
   tests/
 ```
@@ -84,16 +97,23 @@ Run each command from the `student-risk` repository root with the virtual enviro
    python -m src.generate_data --seed 42
    ```
 
-   Writes `data/raw/students.csv` (default: 600 records in each of four terms).
+   Writes `data/raw/students.csv` (default: 600 records in each of four terms) and a separate `data/raw/audit_groups.csv`. The audit file contains `student_id`, `gender`, and `school_support_level`; it is never included in model features.
 
 2. **Train, tune, evaluate, and save the model**
 
    ```bash
    python -m src.train
    python -m src.make_global_importance
+   python -m src.audit
+   python -m src.capacity_analysis
+   python -m src.robustness
    ```
 
-   Training uses terms 1-2; term 3 is used for model selection, threshold selection, and permutation importance; term 4 is held out for final test evaluation. The selected artifact is a complete preprocessing-plus-classifier pipeline.
+   Training uses terms 1-2; term 3 is used for model selection, threshold selection, and permutation importance; term 4 is held out for final test evaluation. The fairness audit joins the separate group labels only to term-4 predictions and writes `reports/fairness_audit.csv` and `reports/figures/fairness_audit.png`.
+
+   Capacity analysis ranks term-4 predictions for K=25, 50, 100, and 150, then compares configurable false-negative/false-positive costs across thresholds; defaults are 5 and 1. It writes `reports/capacity_analysis.csv`, `reports/figures/capacity_metrics.png`, and `reports/figures/cost_vs_threshold.png`. To change the relative costs, pass `--cost-false-negative` or `--cost-false-positive` (for example, `python -m src.capacity_analysis --cost-false-negative 5 --cost-false-positive 1`). The selected artifact is a complete preprocessing-plus-classifier pipeline.
+
+   Robustness analysis tests 5%/10% Gaussian noise and 5%/15% additional random missingness on term 4 at the fixed validation threshold. It writes `reports/robustness.csv` and `reports/figures/robustness.png`. The API warns when any input is more than three training standard deviations from that feature's training mean; these training-only statistics are saved in model metadata.
 
 3. **Run the API** (keep this terminal open)
 
@@ -111,6 +131,8 @@ Run each command from the `student-risk` repository root with the virtual enviro
 
    The dashboard calls `http://localhost:8000` by default. To use another API address, set `API_URL` before starting Streamlit (for example, `$env:API_URL="http://localhost:8000"` in PowerShell).
 
+   The **Class overview** tab accepts a downloadable-template CSV with the eight raw features and sends batches of up to 100 rows to `/predict-batch`. The **What-if** tab compares the assessed student's prediction with a scenario changing attendance, assignment completion, and late submissions; this is a model association, not a causal guarantee.
+
 5. **Run tests**
 
    ```bash
@@ -118,6 +140,16 @@ Run each command from the `student-risk` repository root with the virtual enviro
    ```
 
    If the model artifact is missing, the test fixture first runs `python -m src.train`.
+
+## Run with Docker Compose
+
+Build the image and start the API and dashboard from the project root:
+
+```bash
+docker compose up --build
+```
+
+Open the dashboard at `http://localhost:8501` and the API documentation at `http://localhost:8000/docs`. The dashboard uses the API service on the Compose network. Stop both services with `Ctrl+C`, or run `docker compose down` in another terminal. The containers use the checked-in model artifacts; to regenerate data and train a model, follow the reproduction steps above before building.
 
 ## Example API request/response
 
@@ -133,20 +165,20 @@ The fitted artifact returned this response for that input (probability rounded t
 
 ```json
 {
-  "risk_probability": 0.664,
+  "risk_probability": 0.767,
   "risk_band": "High",
   "flagged": true,
   "uncertainty": "normal",
   "confidence_note": "The estimate is not a certainty; it is outside the borderline range and uses the available feature values.",
   "top_signals": [
-    {"feature": "prev_score_3", "value": 41.0, "effect": "increases risk", "impact": 0.333, "message": "Previous score 3 of 41.0 points is below the typical level and increases risk."},
-    {"feature": "attendance_pct", "value": 55.0, "effect": "reduces risk", "impact": 0.087, "message": "Attendance of 55% is below the typical level and reduces risk."},
-    {"feature": "assignment_completion_rate", "value": 0.3, "effect": "increases risk", "impact": 0.078, "message": "Assignment completion of 30% is below the typical level and increases risk."}
+    {"feature": "prev_score_3", "value": 41.0, "effect": "increases risk", "impact": 0.435, "message": "Previous score 3 of 41.0 points is below the typical level and increases risk."},
+    {"feature": "assignment_completion_rate", "value": 0.3, "effect": "increases risk", "impact": 0.262, "message": "Assignment completion of 30% is below the typical level and increases risk."},
+    {"feature": "prev_score_2", "value": 47.0, "effect": "increases risk", "impact": 0.154, "message": "Previous score 2 of 47.0 points is below the typical level and increases risk."}
   ],
-  "warnings": [],
+  "warnings": ["attendance_pct=55 is more than 3 training standard deviations from the training mean: possible input drift"],
   "human_review_note": "Advisory only. This is a statistical estimate, not a judgement about the student. A teacher or counsellor must review before any action. Never use for grading, punishment or admission decisions.",
-  "model_name": "hist_gradient_boosting",
-  "threshold": 0.22860668933306647
+  "model_name": "logistic_regression",
+  "threshold": 0.24216883152668234
 }
 ```
 
@@ -156,13 +188,17 @@ Final held-out test results, read from `reports/model_comparison_test.csv` and `
 
 | Model | Threshold | Precision | Recall | F1 | ROC-AUC | PR-AUC | Brier | TN | FP | FN | TP |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Histogram gradient boosting, sigmoid calibrated | 0.229 | 0.552 | 0.771 | 0.643 | 0.900 | 0.733 | 0.100 | 387 | 82 | 30 | 101 |
+| Logistic regression, sigmoid calibrated | 0.242 | 0.575 | 0.786 | 0.665 | 0.907 | 0.757 | 0.096 | 393 | 76 | 28 | 103 |
 | Rule: `prev_score_3 < 50` | 0.500 | 0.637 | 0.443 | 0.523 | 0.686 | 0.404 | 0.177 | 436 | 33 | 73 | 58 |
 | Stratified dummy | 0.500 | 0.187 | 0.198 | 0.193 | 0.479 | 0.212 | 0.363 | 356 | 113 | 105 | 26 |
 
-The selected model's sigmoid calibrator is fitted with five-fold cross-validation on training terms only. On validation, Brier score improved from **0.122** uncalibrated to **0.099** calibrated (`reports/calibration_comparison_val.csv` and `reports/figures/calibration_curve.png`). The threshold was re-selected on calibrated validation probabilities. The final test report compares the calibrated selected model with both baselines. Logistic regression and random forest are reported in `reports/model_comparison_val.csv`; they were not separately evaluated on the held-out test set because the test is reserved for the selected model and baselines.
+The selected model's sigmoid calibrator is fitted with five-fold cross-validation on training terms only. On validation, Brier score improved from **0.129** uncalibrated to **0.098** calibrated (`reports/calibration_comparison_val.csv` and `reports/figures/calibration_curve.png`). The threshold was re-selected on calibrated validation probabilities. The final test report compares the calibrated selected model with both baselines. Other candidates are reported in `reports/model_comparison_val.csv`; they were not separately evaluated on the held-out test set because the test is reserved for the selected model and baselines.
+
+Risk bands are separate from the flag decision. **Low** is below the selected decision threshold; **Medium** is from that threshold (inclusive) to **0.50** (exclusive); **High** starts at **0.50**. If the selected threshold is at least 0.50, the High cutoff is instead `min(threshold + 0.15, 0.95)`. A prediction is flagged for review at or above the decision threshold, so a 25% estimate is Medium but flagged with the current threshold of about 0.242.
 
 The API also returns an uncertainty level and confidence note. Uncertainty is `high` when the probability is within 0.07 of the decision threshold or at least two inputs are missing; otherwise it is `normal`. This is a simple review cue, not a statistical confidence interval or guarantee.
+
+The API also flags individual feature values more than three training standard deviations from the training mean as possible input drift. This simple univariate warning is not a formal distribution-shift detector. Test-set noise and missingness sensitivity is reported in `reports/robustness.csv` and `reports/figures/robustness.png`.
 
 ## Responsible AI
 
@@ -176,6 +212,7 @@ The API also returns an uncertainty level and confidence note. Uncertainty is `h
 
 - The dataset and its labels are synthetic. Test performance does not establish real-world validity, fairness, calibration, or generalization.
 - Attendance and educational measures may act as proxies for unobserved circumstances. Excluded demographic columns do not prove the absence of proxy bias.
+- `data/raw/audit_groups.csv` is synthetic evaluation metadata only. It is not joined during training or prediction; the group audit is an exploratory term-4 diagnostic, not proof of fairness or parity.
 - The chronological test covers one synthetic term only; school, curriculum, grading, and student populations can differ.
 - Median imputation can hide why information is missing. Sudden life changes and other unobserved factors cannot be inferred from these features.
 - Local median-replacement signals are model perturbations, not causal explanations. Permutation importance is specific to the validation cohort and correlated features can share or mask importance.

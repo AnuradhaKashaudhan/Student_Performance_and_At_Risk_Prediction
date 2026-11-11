@@ -30,6 +30,7 @@ FORBIDDEN = [
     "income",
     "disability",
     "location",
+    "school_support_level",
 ]
 CLIPPING_RULES = {
     "attendance_pct": (0.0, 100.0),

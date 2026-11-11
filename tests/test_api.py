@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import joblib
@@ -65,6 +66,26 @@ def test_missing_feature_is_reported_as_warning() -> None:
     assert response.json()["confidence_note"]
 
 
+def test_drifted_feature_is_reported_as_api_warning() -> None:
+    metadata = json.loads(
+        (ROOT / "models" / "metadata.json").read_text(encoding="utf-8")
+    )
+    feature = "attendance_trend_3w"
+    record = dict(HIGH_RISK)
+    record[feature] = metadata["training_means"][feature] + (
+        3.1 * metadata["training_stds"][feature]
+    )
+
+    with TestClient(app) as client:
+        response = client.post("/predict", json=record)
+
+    assert response.status_code == 200
+    assert any(
+        feature in warning and "possible input drift" in warning
+        for warning in response.json()["warnings"]
+    )
+
+
 def test_different_students_get_model_derived_probabilities() -> None:
     import pandas as pd
 
@@ -93,3 +114,28 @@ def test_batch_prediction_returns_both_results() -> None:
     assert response.status_code == 200
     assert len(response.json()["predictions"]) == 2
     assert response.json()["predictions"][0]["risk_probability"] > response.json()["predictions"][1]["risk_probability"]
+
+
+
+
+def test_batch_prediction_accepts_20_rows_and_uses_model_probabilities() -> None:
+    import pandas as pd
+
+    pipeline = joblib.load(ROOT / "models" / "model.joblib")
+    records = [HIGH_RISK if index % 2 == 0 else LOW_RISK for index in range(20)]
+    raw_features = pd.DataFrame(
+        [{feature: record[feature] for feature in FEATURES} for record in records]
+    )
+    expected_probabilities = pipeline.predict_proba(raw_features)[
+        :, list(pipeline.classes_).index(1)
+    ]
+
+    with TestClient(app) as client:
+        response = client.post("/predict-batch", json={"records": records})
+
+    assert response.status_code == 200
+    results = response.json()["predictions"]
+    assert len(results) == 20
+    assert [row["risk_probability"] for row in results] == [
+        round(float(probability), 3) for probability in expected_probabilities
+    ]

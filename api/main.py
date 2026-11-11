@@ -201,12 +201,20 @@ def health(request: Request) -> dict[str, Any]:
 def model_info(request: Request) -> dict[str, Any]:
     """Return the loaded model's metadata and documented limitations."""
     _, metadata = _require_artifact(request)
+    low_max = metadata["band_cutoffs"]["low_max"]
+    high_min = metadata["band_cutoffs"]["high_min"]
     return {
         "model_name": metadata["model_name"],
         "trained_at": metadata.get("trained_at"),
         "features": metadata["features"],
         "threshold": metadata["threshold"],
         "band_cutoffs": metadata["band_cutoffs"],
+        "risk_band_definitions": {
+            "Low": f"probability < {low_max:.4f}",
+            "Medium": f"{low_max:.4f} <= probability < {high_min:.4f}",
+            "High": f"probability >= {high_min:.4f}",
+        },
+        "band_cutoff_note": metadata["band_cutoff_note"],
         "test_metrics": metadata["test_metrics"],
         "limitations": [
             "The training and evaluation data are synthetic and may not represent real students.",

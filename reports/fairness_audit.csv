@@ -1,0 +1,7 @@
+group_attribute,group,n,recall,precision,false_positive_rate,false_negative_rate,flag_rate,largest_gap_metric,largest_gap
+gender,F,294,0.824561,0.552941,0.160338,0.175439,0.289116,recall,0.165625
+gender,M,264,0.734375,0.618421,0.145000,0.265625,0.287879,recall,0.165625
+gender,Other,42,0.900000,0.500000,0.281250,0.100000,0.428571,recall,0.165625
+school_support_level,high,188,0.875000,0.583333,0.128205,0.125000,0.255319,recall,0.129902
+school_support_level,low,190,0.770833,0.578125,0.190141,0.229167,0.336842,recall,0.129902
+school_support_level,medium,222,0.745098,0.567164,0.169591,0.254902,0.301802,recall,0.129902

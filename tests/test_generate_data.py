@@ -1,6 +1,6 @@
 import pandas as pd
 
-from src.generate_data import OUTPUT_COLUMNS, generate
+from src.generate_data import OUTPUT_COLUMNS, generate, generate_datasets
 
 PROTECTED_COLUMNS = {
     "gender",
@@ -30,3 +30,20 @@ def test_expected_columns_and_no_protected_columns() -> None:
 
     assert data.columns.tolist() == OUTPUT_COLUMNS
     assert not PROTECTED_COLUMNS.intersection(data.columns)
+
+
+def test_audit_groups_are_generated_separately() -> None:
+    students, audit_groups = generate_datasets(seed=42)
+    repeated_students, repeated_audit_groups = generate_datasets(seed=42)
+
+    assert audit_groups.columns.tolist() == [
+        "student_id",
+        "gender",
+        "school_support_level",
+    ]
+    pd.testing.assert_frame_equal(students, repeated_students)
+    pd.testing.assert_frame_equal(audit_groups, repeated_audit_groups)
+    assert audit_groups["student_id"].tolist() == students["student_id"].tolist()
+    assert set(audit_groups["gender"]) <= {"M", "F", "Other"}
+    assert set(audit_groups["school_support_level"]) <= {"low", "medium", "high"}
+    assert not set(audit_groups.columns[1:]).intersection(students.columns)

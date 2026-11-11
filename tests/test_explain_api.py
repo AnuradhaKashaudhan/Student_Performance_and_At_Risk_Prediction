@@ -4,10 +4,21 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
-from src.explain import load_artifact, predict_one
+from src.explain import _risk_band, load_artifact, predict_one
 from src.preprocess import FEATURES
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_risk_band_boundaries_keep_medium_separate_from_flag_threshold() -> None:
+    cutoffs = {"low_max": 0.242, "high_min": 0.50}
+
+    assert _risk_band(0.241, cutoffs) == "Low"
+    assert _risk_band(0.242, cutoffs) == "Medium"
+    assert _risk_band(0.25, cutoffs) == "Medium"
+    assert _risk_band(0.50, cutoffs) == "High"
+    assert _risk_band(0.74, {"low_max": 0.60, "high_min": 0.75}) == "Medium"
+    assert _risk_band(0.75, {"low_max": 0.60, "high_min": 0.75}) == "High"
 
 HIGH_RISK_STUDENT = {
     "attendance_pct": 55,
@@ -67,6 +78,24 @@ def test_explanation_warns_and_clips_outliers_and_missing_values() -> None:
     assert any("prev_score_3 missing" in warning for warning in result["warnings"])
 
 
+def test_explanation_warns_when_feature_is_outside_training_distribution() -> None:
+    pipeline, metadata = load_artifact(
+        ROOT / "models" / "model.joblib",
+        ROOT / "models" / "metadata.json",
+    )
+    feature = "attendance_trend_3w"
+    record = dict(HIGH_RISK_STUDENT)
+    record[feature] = metadata["training_means"][feature] + (
+        3.1 * metadata["training_stds"][feature]
+    )
+
+    result = predict_one(pipeline, metadata, record)
+
+    assert any("more than 3 training standard deviations" in warning
+               and "possible input drift" in warning
+               for warning in result["warnings"])
+
+
 def test_uncertainty_is_high_for_multiple_missing_features() -> None:
     pipeline, metadata = load_artifact(
         ROOT / "models" / "model.joblib",
@@ -103,7 +132,15 @@ def test_borderline_prediction_is_marked_high_uncertainty() -> None:
 
 def test_api_serves_model_and_predictions(client: TestClient) -> None:
     assert client.get("/health").json()["model_loaded"] is True
-    assert client.get("/model-info").status_code == 200
+    model_info = client.get("/model-info")
+    assert model_info.status_code == 200
+    model_data = model_info.json()
+    assert model_data["band_cutoffs"]["low_max"] == model_data["threshold"]
+    assert model_data["band_cutoffs"]["high_min"] == 0.5
+    assert model_data["risk_band_definitions"]["Medium"].endswith(
+        "probability < 0.5000"
+    )
+    assert "threshold" in model_data["band_cutoff_note"]
 
     high = client.post("/predict", json=HIGH_RISK_STUDENT)
     low = client.post("/predict", json=LOW_RISK_STUDENT)

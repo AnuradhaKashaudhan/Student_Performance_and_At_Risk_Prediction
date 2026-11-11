@@ -22,16 +22,21 @@ def test_saved_model_and_metadata_are_valid() -> None:
     assert isinstance(pipeline, CalibratedClassifierCV)
     assert metadata["calibration"]["method"] == "sigmoid"
     assert metadata["calibration"]["cv"] == 5
+    assert set(metadata["training_means"]) == set(metadata["features"])
+    assert set(metadata["training_stds"]) == set(metadata["features"])
+    assert all(value > 0 for value in metadata["training_stds"].values())
     assert "brier_score" in metadata["test_metrics"]
     assert "brier_score" in evaluate([0, 1], [0.2, 0.8], 0.5)
 
 
 def test_validation_calibration_comparison_is_saved() -> None:
     comparison = pd.read_csv(ROOT / "reports" / "calibration_comparison_val.csv")
+    metadata = json.loads((ROOT / "models" / "metadata.json").read_text(encoding="utf-8"))
+    model_name = metadata["model_name"]
 
     assert set(comparison["model_name"]) == {
-        "hist_gradient_boosting_uncalibrated",
-        "hist_gradient_boosting_sigmoid_calibrated",
+        f"{model_name}_uncalibrated",
+        f"{model_name}_sigmoid_calibrated",
     }
     assert comparison["brier_score"].notna().all()
     uncalibrated = comparison.loc[
