@@ -42,10 +42,17 @@ def test_health_and_prediction_schema() -> None:
     result = prediction.json()
     assert 0 <= result["risk_probability"] <= 1
     assert result["risk_band"] in {"Low", "Medium", "High"}
-    assert len(result["top_signals"]) == 3
+    assert 0 <= len(result["top_signals"]) <= 3
+    assert all(signal["impact"] >= 0.01 for signal in result["top_signals"])
+    assert result["signal_note"] is None or isinstance(result["signal_note"], str)
     assert result["human_review_note"]
     assert result["uncertainty"] in {"normal", "high"}
     assert result["confidence_note"]
+    signal_schema = app.openapi()["components"]["schemas"]["PredictionResponse"][
+        "properties"
+    ]["top_signals"]
+    assert signal_schema["minItems"] == 0
+    assert signal_schema["maxItems"] == 3
     # Local explanations need counterfactual predictions, so independently
     # reproduce only the primary model probability from the persisted pipeline.
     import pandas as pd

@@ -182,15 +182,19 @@ def plot_calibration_curve(
 def plot_model_comparison(comparison: pd.DataFrame, filename: str) -> Path:
     """Save a comparison chart for recall, precision, F1, ROC-AUC, and PR-AUC."""
     metrics = ["recall", "precision", "f1", "roc_auc", "pr_auc"]
-    missing = set(["model_name", *metrics]).difference(comparison.columns)
+    missing = set(["model_name", "role", *metrics]).difference(comparison.columns)
     if missing:
         raise ValueError(f"Comparison table is missing columns: {sorted(missing)}")
     chart = comparison.set_index("model_name")[metrics]
+    chart.index = [
+        f"{row.model_name}\n({row.role.replace('_', ' ')})"
+        for row in comparison.itertuples()
+    ]
     fig, ax = plt.subplots(figsize=(10, 5))
     chart.plot(kind="bar", ax=ax)
     ax.set(
-        title="Test model comparison",
-        xlabel="Model",
+        title="Held-out test comparison (selection fixed on validation)",
+        xlabel="Model and reporting role",
         ylabel="Score",
         ylim=(0, 1),
     )

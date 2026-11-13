@@ -128,7 +128,8 @@ class PredictionResponse(BaseModel):
     flagged: bool
     uncertainty: Literal["normal", "high"]
     confidence_note: str
-    top_signals: Annotated[list[RiskSignal], Field(max_length=3)]
+    top_signals: Annotated[list[RiskSignal], Field(min_length=0, max_length=3)]
+    signal_note: str | None = None
     warnings: list[str]
     human_review_note: str
     model_name: str

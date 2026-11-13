@@ -416,35 +416,61 @@ def train() -> None:
         y_val, calibrated_val_probabilities, final_threshold
     )
 
-    # Evaluate each selected test candidate exactly once, after all choices are fixed.
-    test_probabilities: dict[str, np.ndarray] = {
-        final_name: _positive_probability(calibrated_model, X_test)
-    }
-    thresholds = {final_name: final_threshold}
+    # Test metrics below are reporting-only; model and threshold selection are
+    # complete and use validation data only.
+    selected_test_probabilities = _positive_probability(calibrated_model, X_test)
+    test_evaluations: list[tuple[str, str, np.ndarray, float, str]] = [
+        (final_name, "selected", selected_test_probabilities, final_threshold, final_name)
+    ]
     for baseline_name in ("dummy_stratified", "rule_prev_score_3_lt_50"):
-        test_probabilities[baseline_name] = _positive_probability(
-            models[baseline_name], X_test
+        test_evaluations.append(
+            (
+                baseline_name,
+                "baseline",
+                _positive_probability(models[baseline_name], X_test),
+                0.5,
+                baseline_name,
+            )
         )
-        thresholds[baseline_name] = 0.5
+
+    for candidate_name in ("random_forest", "hist_gradient_boosting"):
+        # Use the tuned training-fit model when one was searched; otherwise
+        # report the untuned training-fit candidate. Its cutoff is validation-only.
+        candidate_model = tuned_models.get(candidate_name, models[candidate_name])
+        validation_probabilities = _positive_probability(candidate_model, X_val)
+        candidate_threshold = select_threshold(
+            y_val, validation_probabilities, min_recall=0.80
+        )
+        test_evaluations.append(
+            (
+                candidate_name,
+                "reported_after_selection",
+                _positive_probability(candidate_model, X_test),
+                candidate_threshold,
+                f"reported_after_selection:{candidate_name}",
+            )
+        )
 
     test_rows: list[dict[str, object]] = []
     test_metrics: dict[str, dict[str, object]] = {}
-    for name, probabilities in test_probabilities.items():
-        metrics = evaluate(y_test, probabilities, thresholds[name])
-        test_metrics[name] = metrics
-        test_rows.append(_comparison_row(name, metrics, thresholds[name]))
+    for name, role, probabilities, threshold, metrics_key in test_evaluations:
+        metrics = evaluate(y_test, probabilities, threshold)
+        test_metrics[metrics_key] = metrics
+        row = _comparison_row(name, metrics, threshold)
+        row["role"] = role
+        test_rows.append(row)
     test_comparison = pd.DataFrame(test_rows)
     test_comparison.to_csv(reports / "model_comparison_test.csv", index=False)
     with (reports / "test_metrics.json").open("w", encoding="utf-8") as file:
         json.dump(test_metrics, file, indent=2)
 
     plot_confusion_matrix(
-        y_test, test_probabilities[final_name], final_threshold, final_name
+        y_test, selected_test_probabilities, final_threshold, final_name
     )
-    plot_pr_curve(y_test, test_probabilities[final_name], final_name)
-    plot_roc_curve(y_test, test_probabilities[final_name], final_name)
+    plot_pr_curve(y_test, selected_test_probabilities, final_name)
+    plot_roc_curve(y_test, selected_test_probabilities, final_name)
     plot_model_comparison(test_comparison, "model_comparison_test.png")
-    _write_error_analysis(test_data, test_probabilities[final_name], final_threshold)
+    _write_error_analysis(test_data, selected_test_probabilities, final_threshold)
 
     cleaned_train = Cleaner().fit_transform(X_train)
     medians = cleaned_train.median().to_dict()

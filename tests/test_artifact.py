@@ -47,3 +47,31 @@ def test_validation_calibration_comparison_is_saved() -> None:
     ].item()
     assert calibrated < uncalibrated
     assert (ROOT / "reports" / "figures" / "calibration_curve.png").is_file()
+
+
+def test_test_comparison_includes_selected_baselines_and_reporting_candidates() -> None:
+    comparison = pd.read_csv(ROOT / "reports" / "model_comparison_test.csv")
+    metadata = json.loads((ROOT / "models" / "metadata.json").read_text(encoding="utf-8"))
+
+    assert set(comparison["role"]) == {
+        "selected",
+        "baseline",
+        "reported_after_selection",
+    }
+    assert len(comparison) == 5
+    assert comparison.loc[comparison["role"] == "selected", "model_name"].tolist() == [
+        metadata["model_name"]
+    ]
+    assert set(comparison.loc[comparison["role"] == "baseline", "model_name"]) == {
+        "dummy_stratified",
+        "rule_prev_score_3_lt_50",
+    }
+    assert set(
+        comparison.loc[
+            comparison["role"] == "reported_after_selection", "model_name"
+        ]
+    ) == {"random_forest", "hist_gradient_boosting"}
+    assert comparison.loc[comparison["role"] == "selected", "threshold"].item() == (
+        metadata["threshold"]
+    )
+    assert (ROOT / "reports" / "figures" / "model_comparison_test.png").is_file()

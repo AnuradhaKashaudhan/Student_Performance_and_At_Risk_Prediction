@@ -16,6 +16,7 @@ HUMAN_REVIEW_NOTE = (
     "student. A teacher or counsellor must review before any action. Never use "
     "for grading, punishment or admission decisions."
 )
+NO_NOTICEABLE_SIGNAL_NOTE = "No single input moved the estimate noticeably."
 ROOT = Path(__file__).resolve().parents[1]
 FIGURE_DIR = ROOT / "reports" / "figures"
 REPORT_DIR = ROOT / "reports"
@@ -250,15 +251,18 @@ def predict_one(
     signals: list[tuple[float, dict[str, Any]]] = []
     for feature, counterfactual_probability in zip(features, probabilities[1:]):
         delta = probability - float(counterfactual_probability)
+        impact = abs(delta)
+        if impact < 0.01:
+            continue
         effect = "increases risk" if delta > 0 else "reduces risk"
         signals.append(
             (
-                abs(delta),
+                impact,
                 {
                     "feature": feature,
                     "value": raw_record[feature],
                     "effect": effect,
-                    "impact": round(abs(delta), 3),
+                    "impact": round(impact, 3),
                     "message": _signal_message(
                         feature, raw_record[feature], effect, float(medians[feature])
                     ),
@@ -274,6 +278,7 @@ def predict_one(
         "uncertainty": uncertainty,
         "confidence_note": confidence_note,
         "top_signals": [signal for _, signal in signals[:3]],
+        "signal_note": NO_NOTICEABLE_SIGNAL_NOTE if not signals else None,
         "warnings": warnings,
         "human_review_note": HUMAN_REVIEW_NOTE,
         "model_name": meta["model_name"],

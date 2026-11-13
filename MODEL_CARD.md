@@ -2,10 +2,10 @@
 
 ## Model details
 
-- **Model:** Sigmoid-calibrated logistic regression pipeline.
+- **Model:** Sigmoid-calibrated histogram gradient boosting pipeline.
 - **Prediction unit:** One student at the end of week 8 of a term.
 - **Target:** Whether the week-10 assessment score is below 50/100.
-- **Decision threshold:** 0.2422. A prediction at or above this threshold is flagged for human review.
+- **Decision threshold:** 0.2286. A prediction at or above this threshold is flagged for human review.
 - **Risk bands:** Low is below the decision threshold; Medium is at/above the threshold and below 0.50; High is at/above 0.50. If the threshold is at least 0.50, High starts at `min(threshold + 0.15, 0.95)`. Bands are descriptive categories; the review flag remains based on the decision threshold.
 - **Intended users:** Teachers and counsellors considering whether to offer an academic-support check-in.
 
@@ -25,24 +25,26 @@ The data-generating process encodes artificial relationships and cannot establis
 
 ## Evaluation metrics
 
-Held-out term-4 metrics for the selected calibrated logistic regression, from [`reports/test_metrics.json`](reports/test_metrics.json):
+Held-out term-4 metrics for the selected calibrated histogram gradient boosting model, from [`reports/test_metrics.json`](reports/test_metrics.json):
 
 | Metric | Value |
 |---|---:|
-| Precision | 0.575 |
-| Recall | 0.786 |
-| F1 | 0.665 |
-| ROC-AUC | 0.907 |
-| PR-AUC | 0.757 |
-| Brier score | 0.096 |
-| Threshold | 0.242 |
-| Confusion matrix (TN, FP, FN, TP) | 393, 76, 28, 103 |
+| Precision | 0.552 |
+| Recall | 0.771 |
+| F1 | 0.643 |
+| ROC-AUC | 0.900 |
+| PR-AUC | 0.733 |
+| Brier score | 0.100 |
+| Threshold | 0.229 |
+| Confusion matrix (TN, FP, FN, TP) | 387, 82, 30, 101 |
 
 These are results on one synthetic held-out term, not guarantees of future or real-world performance.
 
+For completeness, `reports/model_comparison_test.csv` also includes random-forest and histogram-gradient-boosting candidate metrics at thresholds selected on validation with the recall >= 0.80 rule. These rows are marked `reported_after_selection` and were computed only after the selected model and threshold were fixed; they did not influence selection. The histogram-gradient-boosting candidate row is uncalibrated and is distinct from the selected calibrated pipeline.
+
 ## Fairness audit summary
 
-The post-hoc term-4 audit in [`reports/fairness_audit.csv`](reports/fairness_audit.csv) compares synthetic gender and school-support groups; these fields were not used for training or prediction. The largest observed recall gap was 0.166 across gender groups (Other: 0.900, M: 0.734, F: 0.825), and 0.130 across support-level groups (high: 0.875, low: 0.771, medium: 0.745). The synthetic Other group has only 42 records. These descriptive results are noisy, are not a fairness certification, and say nothing about impacts on real groups.
+The post-hoc term-4 audit in [`reports/fairness_audit.csv`](reports/fairness_audit.csv) compares synthetic gender and school-support groups; these fields were not used for training or prediction. The largest gender-group gap was a 0.117 false-positive-rate gap (Other: 0.281, M: 0.170, F: 0.165); the largest support-level gap was a 0.099 recall gap (high: 0.844, low: 0.750, medium: 0.745). The synthetic Other group has only 42 records. These descriptive results are noisy, are not a fairness certification, and say nothing about impacts on real groups.
 
 ## Limitations
 
@@ -59,4 +61,4 @@ A teacher or counsellor must review context before any supportive action. Use an
 
 ## Contact
 
-Project maintainer/contact: **[Add maintainer name and contact information]**
+Anuradha Kashaudhan - your-email@example.com

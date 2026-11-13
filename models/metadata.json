@@ -1,11 +1,11 @@
 {
-  "model_name": "logistic_regression",
+  "model_name": "hist_gradient_boosting",
   "calibration": {
     "method": "sigmoid",
     "cv": 5,
     "fitted_on": "training terms 1 and 2 only"
   },
-  "trained_at": "2026-11-11T10:37:16.833853+00:00",
+  "trained_at": "2026-11-11T17:37:57.167304+00:00",
   "seed": 42,
   "features": [
     "attendance_pct",
@@ -17,9 +17,9 @@
     "prev_score_3",
     "days_since_last_submission"
   ],
-  "threshold": 0.24216883152668234,
+  "threshold": 0.22860668933306647,
   "band_cutoffs": {
-    "low_max": 0.24216883152668234,
+    "low_max": 0.22860668933306647,
     "high_min": 0.5
   },
   "band_cutoff_note": "Low < threshold; Medium threshold to 0.50; High >= 0.50.",
@@ -88,19 +88,19 @@
     }
   },
   "test_metrics": {
-    "precision": 0.5754189944134078,
-    "recall": 0.7862595419847328,
-    "f1": 0.6645161290322581,
-    "roc_auc": 0.9069809078923811,
-    "pr_auc": 0.7569275170097469,
-    "brier_score": 0.09633771037811385,
+    "precision": 0.5519125683060109,
+    "recall": 0.7709923664122137,
+    "f1": 0.643312101910828,
+    "roc_auc": 0.9002750695812107,
+    "pr_auc": 0.7334037815557954,
+    "brier_score": 0.1000722784931059,
     "confusion_matrix": [
-      393,
-      76,
-      28,
-      103
+      387,
+      82,
+      30,
+      101
     ],
-    "threshold": 0.24216883152668234
+    "threshold": 0.22860668933306647
   },
   "split_description": {
     "train": "terms 1 and 2",
@@ -108,5 +108,5 @@
     "test": "term 4",
     "final_refit": "training terms 1 and 2 only; validation not merged"
   },
-  "sklearn_version": "1.8.0"
+  "sklearn_version": "1.9.1"
 }

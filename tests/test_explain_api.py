@@ -1,10 +1,17 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
+import pandas as pd
 from fastapi.testclient import TestClient
 
 from api.main import app
-from src.explain import _risk_band, load_artifact, predict_one
+from src.explain import (
+    NO_NOTICEABLE_SIGNAL_NOTE,
+    _risk_band,
+    load_artifact,
+    predict_one,
+)
 from src.preprocess import FEATURES
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,8 +68,58 @@ def test_explanation_uses_saved_model_and_medians() -> None:
     assert result["flagged"] == (
         result["risk_probability"] >= metadata["threshold"]
     )
-    assert len(result["top_signals"]) == 3
-    assert all("message" in signal and signal["impact"] >= 0 for signal in result["top_signals"])
+    assert 0 <= len(result["top_signals"]) <= 3
+    assert all(
+        "message" in signal and signal["impact"] >= 0.01
+        for signal in result["top_signals"]
+    )
+    if not result["top_signals"]:
+        assert result["signal_note"] == NO_NOTICEABLE_SIGNAL_NOTE
+
+
+def test_explanation_returns_note_when_no_feature_has_noticeable_impact() -> None:
+    class ConstantPipeline:
+        classes_ = [0, 1]
+        named_steps: dict[str, object] = {}
+
+        def predict_proba(self, rows: pd.DataFrame) -> np.ndarray:
+            return np.tile([0.75, 0.25], (len(rows), 1))
+
+    pipeline, metadata = load_artifact(
+        ROOT / "models" / "model.joblib",
+        ROOT / "models" / "metadata.json",
+    )
+    result = predict_one(ConstantPipeline(), metadata, HIGH_RISK_STUDENT)
+
+    assert result["top_signals"] == []
+    assert result["signal_note"] == NO_NOTICEABLE_SIGNAL_NOTE
+
+
+def test_explanation_includes_impacts_at_threshold_and_omits_smaller_ones() -> None:
+    _, metadata = load_artifact(
+        ROOT / "models" / "model.joblib",
+        ROOT / "models" / "metadata.json",
+    )
+    probabilities = np.full(len(metadata["features"]) + 1, 0.25)
+    probabilities[1 + metadata["features"].index("attendance_pct")] = 0.241
+    probabilities[1 + metadata["features"].index("attendance_trend_3w")] = 0.24
+    probabilities[1 + metadata["features"].index("assignment_completion_rate")] = 0.27
+
+    class ControlledPipeline:
+        classes_ = [0, 1]
+        named_steps: dict[str, object] = {}
+
+        def predict_proba(self, rows: pd.DataFrame) -> np.ndarray:
+            return np.column_stack((1 - probabilities, probabilities))
+
+    result = predict_one(ControlledPipeline(), metadata, HIGH_RISK_STUDENT)
+
+    assert [signal["feature"] for signal in result["top_signals"]] == [
+        "assignment_completion_rate",
+        "attendance_trend_3w",
+    ]
+    assert [signal["impact"] for signal in result["top_signals"]] == [0.02, 0.01]
+    assert result["signal_note"] is None
 
 
 def test_explanation_warns_and_clips_outliers_and_missing_values() -> None:

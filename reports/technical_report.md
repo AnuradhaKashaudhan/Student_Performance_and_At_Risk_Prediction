@@ -18,7 +18,7 @@ Synthetic data allow reproducible development and a safe demonstration without c
 
 The dataset overview and charts are in `notebooks/01_eda.ipynb`; plots are in `reports/figures/`. The saved CSV has **2,400 rows**. It contains **119 missing `attendance_pct` values** and **121 missing `prev_score_3` values** (about 5% each). These are left missing in the raw data; the model pipeline median-imputes values and adds missingness indicators. The generator and EDA checks find **23 attendance values over 100**, **24 negative days-since-submission values**, and **25 historical scores over 100**. The preprocessor clips these to their documented bounds before imputation.
 
-There are **zero exact duplicate CSV rows** and IDs remain unique. To resolve the generator's competing unique-ID and duplicate-row constraints, it instead injects **24 repeated feature/label profiles with fresh IDs** (approximately 1% of the records). The split loader drops exact duplicate rows if encountered in another copy of the data; repeated profiles with distinct IDs remain separate students and are not silently discarded.
+There are **zero exact duplicate CSV rows** and IDs remain unique. The generator deliberately injects **24 repeated feature/label profiles with fresh IDs** (approximately 1% of the records) as a data-quality issue to test duplicate detection without duplicating student IDs. A check grouping rows by the full feature/label profile confirmed all 24 repeats stay within a single term (zero repeated profiles span multiple terms). Since splitting is by whole term, none of these deliberately injected profiles can cross the train/validation/test boundaries.
 
 ## 4. Features, exclusions, and proxy-bias discussion
 
@@ -51,25 +51,27 @@ The split is chronological and by term: terms **1-2 (1,200 rows)** train the mod
 
 The training comparison starts with a seeded stratified dummy baseline and an interpretable rule baseline (`prev_score_3 < 50`). It also compares class-balanced logistic regression, class-balanced random forest, and class-balanced histogram gradient boosting. The two leading non-baseline models by initial validation average precision are tuned with 10 randomized parameter combinations each, five-fold stratified cross-validation, and `average_precision` scoring. Cross-validation and preprocessing fit on training terms only.
 
-The tuned logistic regression had validation PR-AUC **0.727**; tuned random forest had validation PR-AUC **0.717**. Logistic regression was selected by validation PR-AUC. A sigmoid probability calibrator with five-fold cross-validation was fitted using training terms 1-2 only. On validation, calibration improved Brier score from **0.128649** to **0.097660** while ROC-AUC remained **0.9087** (`reports/calibration_comparison_val.csv`; reliability curves are in `reports/figures/calibration_curve.png`). The threshold was then reselected on calibrated term-3 probabilities as the highest-precision cutoff meeting the requested at-risk recall floor of 0.80: threshold **0.2422**, validation recall **0.811**. The test comparison is below; complete values are in `reports/model_comparison_test.csv`.
+Tuned histogram gradient boosting had validation PR-AUC **0.733**; tuned logistic regression had validation PR-AUC **0.727**. Histogram gradient boosting was selected in the current pinned-environment run by validation PR-AUC. In an earlier model-selection run, logistic regression was selected over random forest by a small validation PR-AUC margin (**0.727** vs **0.717**) and also for interpretability. Logistic regression may perform well partly because the synthetic next-score target is generated from a near-linear formula; tree models could outperform it on real data with more complex relationships. A sigmoid probability calibrator with five-fold cross-validation was fitted using training terms 1-2 only. On validation, calibration improved Brier score from **0.122448** to **0.098668** while ROC-AUC remained **0.9087** (`reports/calibration_comparison_val.csv`; reliability curves are in `reports/figures/calibration_curve.png`). The threshold was then reselected on calibrated term-3 probabilities as the highest-precision cutoff meeting the requested at-risk recall floor of 0.80: threshold **0.2286**, validation recall **0.803**. The test comparison is below; complete values are in `reports/model_comparison_test.csv`.
 
-| Model evaluated on term 4 | Threshold | Precision | Recall | F1 | ROC-AUC | PR-AUC | Brier |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Logistic regression, sigmoid calibrated | 0.242 | 0.575 | 0.786 | 0.665 | 0.907 | 0.757 | 0.096 |
-| Rule: `prev_score_3 < 50` | 0.500 | 0.637 | 0.443 | 0.523 | 0.686 | 0.404 | 0.177 |
-| Stratified dummy | 0.500 | 0.187 | 0.198 | 0.193 | 0.479 | 0.212 | 0.363 |
+| Role | Model evaluated on term 4 | Threshold | Precision | Recall | F1 | ROC-AUC | PR-AUC | Brier |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| selected | Histogram gradient boosting, sigmoid calibrated | 0.229 | 0.552 | 0.771 | 0.643 | 0.900 | 0.733 | 0.100 |
+| baseline | Rule: `prev_score_3 < 50` | 0.500 | 0.637 | 0.443 | 0.523 | 0.686 | 0.404 | 0.177 |
+| baseline | Stratified dummy | 0.500 | 0.187 | 0.198 | 0.193 | 0.479 | 0.212 | 0.363 |
+| reported_after_selection | Random forest (untuned) | 0.420 | 0.609 | 0.748 | 0.671 | 0.890 | 0.696 | 0.107 |
+| reported_after_selection | Histogram gradient boosting (tuned, uncalibrated) | 0.467 | 0.552 | 0.771 | 0.643 | 0.900 | 0.733 | 0.118 |
 
-The test set is intentionally limited to the selected model and baselines; the other candidates' validation results are in `reports/model_comparison_val.csv`.
+Only validation data are used for model and threshold selection. Once both were fixed, random-forest and histogram-gradient-boosting candidates were evaluated on the held-out test term for reporting only. Each candidate uses its own threshold selected on validation probabilities with the same recall >= 0.80 rule; the tuned estimator is used when available, otherwise the untuned train-fit estimator is reported. These test results do not affect model choice or threshold. The histogram-gradient-boosting candidate row is its tuned uncalibrated pipeline, while the selected row is the calibrated model.
 
 ## 8. Metrics and business interpretation
 
-For the calibrated selected model at the validation-selected threshold, held-out results are precision **0.575**, recall **0.786**, F1 **0.665**, ROC-AUC **0.907**, PR-AUC **0.757**, and Brier score **0.096**. The confusion matrix is **TN=393, FP=76, FN=28, TP=103** (order: true negative, false positive, false negative, true positive), across 600 test students. The lower validation Brier score supports better probability calibration on that validation cohort; it is not proof of calibration on future or real-world populations.
+For the calibrated selected model at the validation-selected threshold, held-out results are precision **0.552**, recall **0.771**, F1 **0.643**, ROC-AUC **0.900**, PR-AUC **0.733**, and Brier score **0.100**. The confusion matrix is **TN=387, FP=82, FN=30, TP=101** (order: true negative, false positive, false negative, true positive), across 600 test students. The lower validation Brier score supports better probability calibration on that validation cohort; it is not proof of calibration on future or real-world populations.
 
-An at-risk **false negative** is a student whose week-10 score was below 50 but who was not flagged; this could mean a missed opportunity for an early supportive check-in. A **false positive** is a student flagged by the model whose score was at least 50; the teacher may spend time on a check-in that was not needed for this specific score outcome. A check-in is not inherently harmful, but repeated or stigmatizing use could be. The costs are asymmetric, so recall is prioritized. The threshold is chosen on validation data to achieve recall at least 0.80 while maximizing precision among eligible thresholds. The test recall is lower, 0.786, which illustrates that validation threshold selection cannot guarantee future performance.
+An at-risk **false negative** is a student whose week-10 score was below 50 but who was not flagged; this could mean a missed opportunity for an early supportive check-in. A **false positive** is a student flagged by the model whose score was at least 50; the teacher may spend time on a check-in that was not needed for this specific score outcome. A check-in is not inherently harmful, but repeated or stigmatizing use could be. The costs are asymmetric, so recall is prioritized. The threshold is chosen on validation data to achieve recall at least 0.80 while maximizing precision among eligible thresholds. The test recall is lower, **0.771**, which illustrates that validation threshold selection cannot guarantee future performance.
 
-**Business interpretation.** If capacity is limited to 25 check-ins per term, the highest-risk ranking identifies 23 at-risk students (Precision@25 **0.920**, Recall@25 **0.176**, lift **4.214×** random selection). At K=50, precision is **0.860** and recall **0.328**; at K=100, precision is **0.760** and recall **0.580**; at K=150, recall rises to **0.733** with precision **0.640**. Under illustrative cost weights FN=5 and FP=1, the validation-chosen threshold **0.2422** incurs a held-out test cost of **216** units (28 FN and 76 FP). The test-grid minimum is **188** units at threshold 0.1 (7 FN, 153 FP), illustrating the missed-support versus extra-check-in trade-off; this test-set comparison is descriptive and must not be used to retune the threshold.
+**Business interpretation.** If capacity is limited to 25 check-ins per term, the highest-risk ranking identifies 23 at-risk students (Precision@25 **0.920**, Recall@25 **0.176**, lift **4.214×** random selection). At K=50, precision is **0.820** and recall **0.313**; at K=100, precision is **0.760** and recall **0.580**; at K=150, recall rises to **0.725** with precision **0.633**. Under illustrative cost weights FN=5 and FP=1, the validation-chosen threshold **0.2286** incurs a held-out test cost of **232** units (30 FN and 82 FP). The test-grid minimum is **200** units at threshold 0.1 (9 FN, 155 FP), illustrating the missed-support versus extra-check-in trade-off; this test-set comparison is descriptive and must not be used to retune the threshold.
 
-**Risk bands are distinct from the review flag.** Low is probability below the selected decision threshold; Medium is at or above that threshold but below 0.50; High is 0.50 or above. When the selected threshold is at least 0.50, the High cutoff is `min(threshold + 0.15, 0.95)`. The current threshold is **0.2422**, so an estimate of **0.25** is Medium while still flagged for human review.
+**Risk bands are distinct from the review flag.** Low is probability below the selected decision threshold; Medium is at or above that threshold but below 0.50; High is 0.50 or above. When the selected threshold is at least 0.50, the High cutoff is `min(threshold + 0.15, 0.95)`. The current threshold is **0.2286**, so an estimate of **0.25** is Medium while still flagged for human review.
 
 ## 9. Robustness and drift checks
 
@@ -77,11 +79,11 @@ The fixed model and validation-selected threshold were stress-tested only on ter
 
 | Test scenario | Recall | Change | Precision | Change | F1 | Change |
 |---|---:|---:|---:|---:|---:|---:|
-| Baseline | 0.786 | 0.000 | 0.575 | 0.000 | 0.665 | 0.000 |
-| Gaussian noise, 5% of train SD | 0.802 | +0.015 | 0.574 | -0.002 | 0.669 | +0.004 |
-| Gaussian noise, 10% of train SD | 0.779 | -0.008 | 0.570 | -0.006 | 0.658 | -0.006 |
-| Additional random missingness, 5% | 0.779 | -0.008 | 0.570 | -0.006 | 0.658 | -0.006 |
-| Additional random missingness, 15% | 0.802 | +0.015 | 0.580 | +0.005 | 0.673 | +0.009 |
+| Baseline | 0.7710 | 0.0000 | 0.5519 | 0.0000 | 0.6433 | 0.0000 |
+| Gaussian noise, 5% of train SD | 0.7634 | -0.0076 | 0.5556 | +0.0036 | 0.6431 | -0.0002 |
+| Gaussian noise, 10% of train SD | 0.7786 | +0.0076 | 0.5574 | +0.0055 | 0.6497 | +0.0064 |
+| Additional random missingness, 5% | 0.7710 | 0.0000 | 0.5580 | +0.0061 | 0.6474 | +0.0041 |
+| Additional random missingness, 15% | 0.7863 | +0.0153 | 0.5538 | +0.0019 | 0.6498 | +0.0065 |
 
 These are deterministic perturbation experiments on one small synthetic test term, not population robustness guarantees. Small metric increases under corruption are possible due to a particular random draw and do not show that noise is beneficial. Noise and missingness are independent stressors here; this is not a combined scenario.
 
@@ -89,18 +91,20 @@ At inference, `predict_one` compares each non-missing value with the feature's t
 
 ## 10. Error analysis
 
-`reports/false_positives.csv` and `reports/false_negatives.csv` contain up to ten examples each, ranked by predicted probability (descending for false positives; closest to the threshold for false negatives). There are **76** false positives and **28** false negatives at the selected threshold.
+`reports/false_positives.csv` and `reports/false_negatives.csv` contain up to ten examples each, ranked by predicted probability (descending for false positives; closest to the threshold for false negatives). There are **82** false positives and **30** false negatives at the selected threshold.
 
-1. **Worked false positive:** student `T4-0036` had next score **50.10** (not at risk), but predicted risk probability **0.9107**. Their latest prior score was **35.23**, assignment completion **27.0%**, and attendance **75.63%**. The available indicators suggested risk, while the next assessment was just above the target boundary.
-2. **Worked false negative:** student `T4-0347` had next score **47.20** (at risk), but predicted probability **0.2338**, just below the **0.2422** cutoff. Their latest prior score was **50.93**, assignment completion **38.7%**, and attendance **75.65%**. The outcome illustrates that available indicators and noisy assessment outcomes do not perfectly align.
+1. **Worked false positive:** student `T4-0036` had next score **50.10** (not at risk), but predicted risk probability **0.7730**. Their latest prior score was **35.23**, assignment completion **27.0%**, and attendance **75.63%**. The available indicators suggested risk, while the next assessment was just above the target boundary.
+2. **Worked false negative:** student `T4-0347` had next score **47.20** (at risk), but predicted probability **0.1912**, just below the **0.2286** cutoff. Their latest prior score was **50.93**, assignment completion **38.7%**, and attendance **75.65%**. The outcome illustrates that available indicators and noisy assessment outcomes do not perfectly align.
 
 These are individual examples, not evidence that the same pattern explains every error.
 
 ## 11. Explainability
 
-Global importance uses permutation importance with average precision on the **validation term only**; results are saved in `reports/global_importance.csv` and `reports/figures/permutation_importance.png`. The two largest mean score drops were assignment completion (**0.2449**, standard deviation **0.0327**) and `prev_score_3` (**0.2304**, standard deviation **0.0208**). The remaining mean importances were `prev_score_2` 0.0581, `prev_score_1` 0.0037, late submission 0.0017, days since submission 0.0002, attendance level -0.0026, and attendance trend -0.0038. Small negative permutation estimates do not mean causal protective effects; they can occur from sampling variation and feature correlation.
+Global importance uses permutation importance with average precision on the **validation term only**; results are saved in `reports/global_importance.csv` and `reports/figures/permutation_importance.png`. The two largest mean score drops were assignment completion (**0.2847**, standard deviation **0.0373**) and `prev_score_3` (**0.2109**, standard deviation **0.0304**). The remaining mean importances were `prev_score_2` 0.0297, `prev_score_1` 0.0130, `attendance_trend_3w` 0.0027, attendance level 0.0024, days since submission 0.0008, and late submission -0.0007. A small negative permutation estimate does not mean a causal protective effect; it can occur from sampling variation and feature correlation.
 
-For a local explanation, consider the high-risk example request in the README: the calibrated model returns risk probability **0.767**, above its **0.2422** flag threshold. Replacing `prev_score_3=41` with its training median (63.043) changes risk by **0.435**; replacing assignment completion 0.30 with its training median (0.5340) changes risk by **0.262**; replacing `prev_score_2=47` with its training median (63.141) changes risk by **0.154**. Each is an “increases risk” signal for this example. The API also warns that attendance 55 is over three standard deviations below the training mean. These are one-feature-at-a-time model perturbations and an input-distribution warning, not causal statements or a judgement of the student.
+In the generated data, `attendance_pct` and `assignment_completion_rate` have a Pearson correlation of **0.881967** (computed across `data/raw/students.csv`, pairwise complete observations). Their strong correlation means attendance has near-zero permutation importance (**0.0024**) in this fitted model in part because assignment completion (**0.2847**) carries overlapping information. This is not evidence that attendance is irrelevant in real schools. For the same reason, the dashboard's What-if tab shows a relatively small additional effect from changing attendance while related completion information remains in the inputs; this is a model-specific association, not a causal claim.
+
+For a local explanation, consider the high-risk example request in the README: the calibrated model returns risk probability **0.664**, above its **0.2286** flag threshold. Replacing `prev_score_3=41` with its training median (63.043) changes risk by **0.333**; replacing attendance 55 with its training median (79.977) changes risk by **0.087** in the reducing-risk direction; replacing assignment completion 0.30 with its training median (0.5340) changes risk by **0.078**. These are one-feature-at-a-time model perturbations, not causal explanations. To avoid presenting tiny, potentially counterintuitive changes from correlated features as meaningful signals, the API returns at most three signals with an absolute probability impact of at least **0.01**. If none qualify, it returns an empty signal list and the message “No single input moved the estimate noticeably.” The API also warns that attendance 55 is over three standard deviations below the training mean. These signals and the input-distribution warning are not causal statements or a judgement of the student.
 
 ## 12. Inference interface
 
@@ -127,16 +131,16 @@ Use the estimate only to prompt a supportive, private, human conversation. A tea
 
 The generator writes `gender` and `school_support_level` to the separate `data/raw/audit_groups.csv`; neither field is added to `students.csv` or the model's `FEATURES`. These synthetic labels are assigned randomly with a mild dependence on latent engagement solely to exercise post-hoc group measurement. This artificial dependence is not a claim about real gender, school support, or student behavior. The audit command runs after the model is fixed, predicts only term 4, then joins group labels to those held-out predictions. Training rows, validation rows, and group labels are never used to fit the model or choose its threshold.
 
-The audit reports recall, precision, false-positive rate, false-negative rate, and flag rate within each group. On the 600-student test term, the largest gender-group gap among these rates was a **0.166 recall gap** (Other 0.900, M 0.734, F 0.825). The largest support-level gap was a **0.130 recall gap** (high 0.875, low 0.771, medium 0.745).
+The audit reports recall, precision, false-positive rate, false-negative rate, and flag rate within each group. On the 600-student test term, the largest gender-group gap among these rates was a **0.117 false-positive-rate gap** (Other 0.281, M 0.170, F 0.165). The largest support-level gap was a **0.099 recall gap** (high 0.844, low 0.750, medium 0.745).
 
 | Audit attribute | Group | n | Recall | Precision | False-positive rate | False-negative rate | Flag rate |
 |---|---|---:|---:|---:|---:|---:|---:|
-| Gender | F | 294 | 0.825 | 0.553 | 0.160 | 0.175 | 0.289 |
-| Gender | M | 264 | 0.734 | 0.618 | 0.145 | 0.266 | 0.288 |
-| Gender | Other | 42 | 0.900 | 0.500 | 0.281 | 0.100 | 0.429 |
-| School support level | High | 188 | 0.875 | 0.583 | 0.128 | 0.125 | 0.255 |
-| School support level | Low | 190 | 0.771 | 0.578 | 0.190 | 0.229 | 0.337 |
-| School support level | Medium | 222 | 0.745 | 0.567 | 0.170 | 0.255 | 0.302 |
+| Gender | F | 294 | 0.807 | 0.541 | 0.165 | 0.193 | 0.289 |
+| Gender | M | 264 | 0.734 | 0.580 | 0.170 | 0.266 | 0.307 |
+| Gender | Other | 42 | 0.800 | 0.471 | 0.281 | 0.200 | 0.405 |
+| School support level | High | 188 | 0.844 | 0.551 | 0.141 | 0.156 | 0.261 |
+| School support level | Low | 190 | 0.750 | 0.562 | 0.197 | 0.250 | 0.337 |
+| School support level | Medium | 222 | 0.745 | 0.543 | 0.187 | 0.255 | 0.315 |
 
 The CSV with full precision and the visualization are `reports/fairness_audit.csv` and `reports/figures/fairness_audit.png`. These are descriptive differences from one synthetic cohort, not a fairness certification or evidence about actual students. Small groups (notably the 42-student Other group) make rates especially noisy. No statistical uncertainty intervals or causal interpretation are supplied.
 

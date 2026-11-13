@@ -18,14 +18,14 @@
 
 - **0:00 — Problem:** Explain the week-8 checkpoint, the two-week week-10 target, and the teacher/counsellor check-in decision. Say this is advisory only.
 - **0:30 — Data and EDA:** Run `python -m src.generate_data --seed 42`; show the 2,400 synthetic rows, 21.5% at-risk rate, missingness/outlier checks, and EDA plots. Point out that `audit_groups.csv` is separate from the model dataset and mention there is no real student data.
-- **1:15 — Baselines and model results:** Show `reports/model_comparison_test.csv`, `reports/test_metrics.json`, and `reports/calibration_comparison_val.csv`. Explain why recall was prioritized, the calibrated validation-selected 0.2422 threshold, the validation Brier improvement (0.128649 to 0.097660), and the test confusion matrix.
+- **1:15 — Baselines and model results:** Show `reports/model_comparison_test.csv`, `reports/test_metrics.json`, and `reports/calibration_comparison_val.csv`. Explain why recall was prioritized, the calibrated histogram-gradient-boosting model's 0.2286 validation-selected threshold, the validation Brier improvement (0.122448 to 0.098668), and the test confusion matrix (TN=387, FP=82, FN=30, TP=101).
 - **2:00 — Live prediction through the dashboard:** Start Uvicorn and Streamlit; use a high-risk example in the form. Show the risk probability, band, and flagged status.
 - **2:45 — Explain one prediction and one error:** Read the top three median-replacement signals. Open a false-positive or false-negative CSV row and explain that the model lacks important context and can be wrong.
 - **3:30 — Limitations and responsible use:** Show the synthetic-group audit and its largest gaps, then explain that its labels and population are artificial and not fairness evidence for real students. Reiterate attendance proxy risks, human review, privacy, and the prohibition on automated grading, punishment, or admissions. Finish with future validation needs.
 
 ## Submission form answers
 
-- **Repository URL:** `<paste repository URL here>`
+- **Repository URL:** https://github.com/AnuradhaKashaudhan/Student_Performance_and_At_Risk_Prediction
 - **Branch:** `main`
 - **Final commit ID:** Run `git rev-parse HEAD` after committing the final submission. This workspace may not yet have a submission commit; do not invent a hash.
 - **Demo declaration:** Local-only demo; no public hosting or real student records are used.
@@ -39,7 +39,7 @@
 1. **Why prioritize recall?** A false negative could miss an opportunity to offer timely academic support. The trade-off is more unnecessary check-ins, so precision and the confusion matrix are reported too.
 2. **Why split chronologically by term?** It resembles predicting for a later cohort and avoids mixing the same term's conditions across train and test.
 3. **How did you avoid leakage?** Only the eight week-8 features enter the pipeline. IDs, term, target, and next score are forbidden; whole terms are kept separate; tuning uses training folds only.
-4. **Why choose logistic regression?** In the current reproducible run, its tuned validation PR-AUC (0.727) was higher than the random-forest candidate (0.717). The final calibrated pipeline is selected without using the held-out term-4 test scores.
+4. **Why choose histogram gradient boosting?** In the current reproducible run, its tuned validation PR-AUC (0.733) exceeded tuned logistic regression (0.727). The final calibrated pipeline is selected without using the held-out term-4 test scores.
 5. **How can the threshold be changed?** For an experiment, select a new threshold on calibrated validation probabilities to meet the intended recall/precision trade-off, then regenerate the model and metadata with `python -m src.train` so `band_cutoffs` match. Do not tune against the test set. A user-facing live threshold control is not implemented.
 6. **How would you add a feature?** First establish it is available by week 8 and appropriate to use; then update `FEATURES`, preprocessing and validation, data schema/generator, training inputs, API model, dashboard, tests, and retrain the artifact. Re-run leakage checks.
 7. **What happens when a value is missing or unusual?** The pipeline clips valid outliers, median-imputes missing raw/derived values using training medians, and adds missingness indicators. The API returns missing-value and greater-than-three-standard-deviation input warnings, and marks uncertainty high if at least two inputs are missing or the probability is within 0.07 of the threshold.

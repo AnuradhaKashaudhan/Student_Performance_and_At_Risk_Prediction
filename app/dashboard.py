@@ -126,7 +126,10 @@ with tabs[0]:
             for signal in result["top_signals"]:
                 st.write(f"- {signal['message']} (impact: {signal['impact']:.3f})")
         else:
-            st.info("No feature-level signals were returned.")
+            st.info(
+                result.get("signal_note")
+                or "No single input moved the estimate noticeably."
+            )
 
         for warning in result.get("warnings", []):
             st.warning(warning)

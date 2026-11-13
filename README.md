@@ -20,54 +20,95 @@ This project is a small, reproducible advisory decision-support prototype. At th
 ## Project structure
 
 ```text
-student-risk/
+.
+  .dockerignore
+  .env.example
+  .gitignore
+  .github/workflows/ci.yml
+  Dockerfile
+  docker-compose.yml
+  MODEL_CARD.md
   README.md
   requirements.txt
-  .env.example
-  data/raw/students.csv
-  data/raw/audit_groups.csv       # separate synthetic groups, evaluation only
-  data/processed/
-  src/
-    generate_data.py
-    audit.py
-    capacity_analysis.py
-    robustness.py
-    split.py
-    preprocess.py
-    train.py
-    evaluate.py
-    explain.py
-    make_global_importance.py
-  api/main.py
+  api/
+    __init__.py
+    main.py
   app/
     dashboard.py
     dashboard_utils.py
-  models/model.joblib
-  models/metadata.json
-  notebooks/01_eda.ipynb
+  data/
+    processed/
+      .gitkeep
+    raw/
+      audit_groups.csv           # separate synthetic groups, evaluation only
+      students.csv
+  docs/
+    submission_checklist.md
+  models/
+    .gitkeep
+    metadata.json
+    model.joblib
+  notebooks/
+    01_eda.ipynb
   reports/
-    model_comparison_val.csv
-    model_comparison_test.csv
-    test_metrics.json
-    fairness_audit.csv
+    calibration_comparison_val.csv
     capacity_analysis.csv
-    robustness.csv
-    false_positives.csv
+    fairness_audit.csv
     false_negatives.csv
+    false_positives.csv
     global_importance.csv
+    model_comparison_test.csv
+    model_comparison_val.csv
+    robustness.csv
     technical_report.md
+    test_metrics.json
     figures/
-      fairness_audit.png
+      at_risk_rate_by_term.png
+      calibration_curve.png
       capacity_metrics.png
+      confusion_matrix_test.png
+      correlation_heatmap.png
       cost_vs_threshold.png
+      fairness_audit.png
+      feature_distributions_by_class.png
+      model_comparison_test.png
+      permutation_importance.png
+      precision_recall_curve_test.png
       robustness.png
-  docs/submission_checklist.md
+      roc_curve_test.png
+      target_class_balance.png
+  src/
+    __init__.py
+    capacity_analysis.py
+    audit.py
+    explain.py
+    evaluate.py
+    generate_data.py
+    make_global_importance.py
+    preprocess.py
+    robustness.py
+    split.py
+    train.py
   tests/
+    __init__.py
+    .gitkeep
+    conftest.py
+    test_api.py
+    test_artifact.py
+    test_audit.py
+    test_capacity_analysis.py
+    test_dashboard_utils.py
+    test_explain_api.py
+    test_generate_data.py
+    test_preprocess.py
+    test_robustness.py
+    test_split_no_leakage.py
+    test_training_pipeline.py
 ```
 
 ## Environment setup
 
-Python 3.11 or newer is recommended. From the repository root, create and activate a virtual environment.
+Use **Python 3.13.12** to match the pinned dependencies, CI workflow, and Docker image. From the repository root, create and activate a virtual environment.
 
 **Windows PowerShell**
 
@@ -143,13 +184,26 @@ Run each command from the `student-risk` repository root with the virtual enviro
 
 ## Run with Docker Compose
 
-Build the image and start the API and dashboard from the project root:
+From PowerShell in the repository root, build the image and start the API and dashboard:
 
 ```bash
 docker compose up --build
 ```
 
-Open the dashboard at `http://localhost:8501` and the API documentation at `http://localhost:8000/docs`. The dashboard uses the API service on the Compose network. Stop both services with `Ctrl+C`, or run `docker compose down` in another terminal. The containers use the checked-in model artifacts; to regenerate data and train a model, follow the reproduction steps above before building.
+In a second PowerShell window, check that the API is healthy:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/health
+docker compose ps
+```
+
+Open the dashboard at `http://localhost:8501` and the API documentation at `http://localhost:8000/docs`. The dashboard reaches the healthy API through `http://api:8000` on the Compose network. Stop both services with `Ctrl+C` in the first window, then run this from the repository root:
+
+```powershell
+docker compose down
+```
+
+The image uses the checked-in model artifacts; the build fails if either model file is missing. To regenerate data and train a model, follow the reproduction steps above before building.
 
 ## Example API request/response
 
@@ -161,24 +215,25 @@ curl -X POST http://localhost:8000/predict \
   -d '{"attendance_pct":55,"attendance_trend_3w":-8,"assignment_completion_rate":0.3,"late_submission_rate":0.6,"prev_score_1":52,"prev_score_2":47,"prev_score_3":41,"days_since_last_submission":12}'
 ```
 
-The fitted artifact returned this response for that input (probability rounded to three decimals):
+The fitted artifact returned this response for that input (probability and signal impacts rounded to three decimals). Signals with impact below 0.01 are omitted; when none qualify, `top_signals` is empty and `signal_note` explains why:
 
 ```json
 {
-  "risk_probability": 0.767,
+  "risk_probability": 0.664,
   "risk_band": "High",
   "flagged": true,
   "uncertainty": "normal",
   "confidence_note": "The estimate is not a certainty; it is outside the borderline range and uses the available feature values.",
+  "signal_note": null,
   "top_signals": [
-    {"feature": "prev_score_3", "value": 41.0, "effect": "increases risk", "impact": 0.435, "message": "Previous score 3 of 41.0 points is below the typical level and increases risk."},
-    {"feature": "assignment_completion_rate", "value": 0.3, "effect": "increases risk", "impact": 0.262, "message": "Assignment completion of 30% is below the typical level and increases risk."},
-    {"feature": "prev_score_2", "value": 47.0, "effect": "increases risk", "impact": 0.154, "message": "Previous score 2 of 47.0 points is below the typical level and increases risk."}
+    {"feature": "prev_score_3", "value": 41.0, "effect": "increases risk", "impact": 0.333, "message": "Previous score 3 of 41.0 points is below the typical level and increases risk."},
+    {"feature": "attendance_pct", "value": 55.0, "effect": "reduces risk", "impact": 0.087, "message": "Attendance of 55% is below the typical level and reduces risk."},
+    {"feature": "assignment_completion_rate", "value": 0.3, "effect": "increases risk", "impact": 0.078, "message": "Assignment completion of 30% is below the typical level and increases risk."}
   ],
   "warnings": ["attendance_pct=55 is more than 3 training standard deviations from the training mean: possible input drift"],
   "human_review_note": "Advisory only. This is a statistical estimate, not a judgement about the student. A teacher or counsellor must review before any action. Never use for grading, punishment or admission decisions.",
-  "model_name": "logistic_regression",
-  "threshold": 0.24216883152668234
+  "model_name": "hist_gradient_boosting",
+  "threshold": 0.22860668933306647
 }
 ```
 
@@ -186,15 +241,18 @@ The fitted artifact returned this response for that input (probability rounded t
 
 Final held-out test results, read from `reports/model_comparison_test.csv` and `reports/test_metrics.json`:
 
-| Model | Threshold | Precision | Recall | F1 | ROC-AUC | PR-AUC | Brier | TN | FP | FN | TP |
+| Role | Model | Threshold | Precision | Recall | F1 | ROC-AUC | PR-AUC | Brier | TN | FP | FN | TP |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Logistic regression, sigmoid calibrated | 0.242 | 0.575 | 0.786 | 0.665 | 0.907 | 0.757 | 0.096 | 393 | 76 | 28 | 103 |
-| Rule: `prev_score_3 < 50` | 0.500 | 0.637 | 0.443 | 0.523 | 0.686 | 0.404 | 0.177 | 436 | 33 | 73 | 58 |
-| Stratified dummy | 0.500 | 0.187 | 0.198 | 0.193 | 0.479 | 0.212 | 0.363 | 356 | 113 | 105 | 26 |
+| selected | Histogram gradient boosting, sigmoid calibrated | 0.229 | 0.552 | 0.771 | 0.643 | 0.900 | 0.733 | 0.100 | 387 | 82 | 30 | 101 |
+| baseline | Rule: `prev_score_3 < 50` | 0.500 | 0.637 | 0.443 | 0.523 | 0.686 | 0.404 | 0.177 | 436 | 33 | 73 | 58 |
+| baseline | Stratified dummy | 0.500 | 0.187 | 0.198 | 0.193 | 0.479 | 0.212 | 0.363 | 356 | 113 | 105 | 26 |
 
-The selected model's sigmoid calibrator is fitted with five-fold cross-validation on training terms only. On validation, Brier score improved from **0.129** uncalibrated to **0.098** calibrated (`reports/calibration_comparison_val.csv` and `reports/figures/calibration_curve.png`). The threshold was re-selected on calibrated validation probabilities. The final test report compares the calibrated selected model with both baselines. Other candidates are reported in `reports/model_comparison_val.csv`; they were not separately evaluated on the held-out test set because the test is reserved for the selected model and baselines.
+| reported_after_selection | Random forest (untuned) | 0.420 | 0.609 | 0.748 | 0.671 | 0.890 | 0.696 | 0.107 | 406 | 63 | 33 | 98 |
+| reported_after_selection | Histogram gradient boosting candidate (tuned, uncalibrated) | 0.467 | 0.552 | 0.771 | 0.643 | 0.900 | 0.733 | 0.118 | 387 | 82 | 30 | 101 |
 
-Risk bands are separate from the flag decision. **Low** is below the selected decision threshold; **Medium** is from that threshold (inclusive) to **0.50** (exclusive); **High** starts at **0.50**. If the selected threshold is at least 0.50, the High cutoff is instead `min(threshold + 0.15, 0.95)`. A prediction is flagged for review at or above the decision threshold, so a 25% estimate is Medium but flagged with the current threshold of about 0.242.
+The selected histogram gradient boosting model's sigmoid calibrator is fitted with five-fold cross-validation on training terms only. Its tuned validation PR-AUC was **0.733**, compared with **0.727** for logistic regression (`reports/model_comparison_val.csv`). On validation, Brier score improved from **0.122448** uncalibrated to **0.098668** calibrated (`reports/calibration_comparison_val.csv` and `reports/figures/calibration_curve.png`). The threshold was re-selected on calibrated validation probabilities to meet the 0.80 recall floor; it is **0.228607**. After model and threshold selection were complete, the random-forest and histogram-gradient-boosting candidates were scored on the test term for reporting, each at its own threshold selected on validation to meet recall >= 0.80. These `reported_after_selection` rows do not influence model or threshold selection; the histogram-gradient-boosting candidate row is its tuned uncalibrated pipeline, distinct from the selected calibrated pipeline.
+
+Risk bands are separate from the flag decision. **Low** is below the selected decision threshold; **Medium** is from that threshold (inclusive) to **0.50** (exclusive); **High** starts at **0.50**. If the selected threshold is at least 0.50, the High cutoff is instead `min(threshold + 0.15, 0.95)`. A prediction is flagged for review at or above the decision threshold, so a 25% estimate is Medium but flagged with the current threshold of about 0.229.
 
 The API also returns an uncertainty level and confidence note. Uncertainty is `high` when the probability is within 0.07 of the decision threshold or at least two inputs are missing; otherwise it is `normal`. This is a simple review cue, not a statistical confidence interval or guarantee.
 
