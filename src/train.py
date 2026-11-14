@@ -433,7 +433,11 @@ def train() -> None:
             )
         )
 
-    for candidate_name in ("random_forest", "hist_gradient_boosting"):
+    for candidate_name in (
+        "logistic_regression",
+        "random_forest",
+        "hist_gradient_boosting",
+    ):
         # Use the tuned training-fit model when one was searched; otherwise
         # report the untuned training-fit candidate. Its cutoff is validation-only.
         candidate_model = tuned_models.get(candidate_name, models[candidate_name])

@@ -5,7 +5,7 @@
     "cv": 5,
     "fitted_on": "training terms 1 and 2 only"
   },
-  "trained_at": "2026-11-11T17:37:57.167304+00:00",
+  "trained_at": "2026-11-14T15:38:45.905609+00:00",
   "seed": 42,
   "features": [
     "attendance_pct",

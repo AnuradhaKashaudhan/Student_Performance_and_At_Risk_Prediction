@@ -40,7 +40,7 @@ Held-out term-4 metrics for the selected calibrated histogram gradient boosting 
 
 These are results on one synthetic held-out term, not guarantees of future or real-world performance.
 
-For completeness, `reports/model_comparison_test.csv` also includes random-forest and histogram-gradient-boosting candidate metrics at thresholds selected on validation with the recall >= 0.80 rule. These rows are marked `reported_after_selection` and were computed only after the selected model and threshold were fixed; they did not influence selection. The histogram-gradient-boosting candidate row is uncalibrated and is distinct from the selected calibrated pipeline.
+For completeness, `reports/model_comparison_test.csv` also includes tuned logistic-regression, random-forest, and histogram-gradient-boosting candidate metrics at thresholds selected on validation with the recall >= 0.80 rule. These rows are marked `reported_after_selection` and were computed only after the selected model and threshold were fixed; they did not influence selection. The histogram-gradient-boosting candidate row is uncalibrated and is distinct from the selected calibrated pipeline.
 
 ## Fairness audit summary
 
@@ -61,4 +61,4 @@ A teacher or counsellor must review context before any supportive action. Use an
 
 ## Contact
 
-Anuradha Kashaudhan - your-email@example.com
+Anuradha Kashaudhan - anuradhakasaudhan15@gmail.com

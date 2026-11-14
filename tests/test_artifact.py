@@ -58,7 +58,7 @@ def test_test_comparison_includes_selected_baselines_and_reporting_candidates() 
         "baseline",
         "reported_after_selection",
     }
-    assert len(comparison) == 5
+    assert len(comparison) == 6
     assert comparison.loc[comparison["role"] == "selected", "model_name"].tolist() == [
         metadata["model_name"]
     ]
@@ -70,7 +70,7 @@ def test_test_comparison_includes_selected_baselines_and_reporting_candidates() 
         comparison.loc[
             comparison["role"] == "reported_after_selection", "model_name"
         ]
-    ) == {"random_forest", "hist_gradient_boosting"}
+    ) == {"logistic_regression", "random_forest", "hist_gradient_boosting"}
     assert comparison.loc[comparison["role"] == "selected", "threshold"].item() == (
         metadata["threshold"]
     )
